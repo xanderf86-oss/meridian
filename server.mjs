@@ -538,18 +538,20 @@ function downsample(values, count) {
   return out;
 }
 
+const nyFormatter = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  weekday: "short",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 function nyParts(unixSeconds) {
   const parts = {};
-  for (const part of new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    weekday: "short",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(unixSeconds * 1000))) {
+  for (const part of nyFormatter.formatToParts(new Date(unixSeconds * 1000))) {
     if (part.type !== "literal") parts[part.type] = part.value;
   }
   const minutes = Number(parts.hour) * 60 + Number(parts.minute);
