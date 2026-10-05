@@ -131,6 +131,7 @@ function buildSleeve(spec, loaded) {
     excess1: spec.floating ? null : sumLast(history, 1),
     excess5: spec.floating ? null : sumLast(history, 5),
     excess21: spec.floating ? null : sumLast(history, 21),
+    asOf: history.at(-1)?.time || null,
     history: spec.chart ? history.slice(-260) : undefined,
   };
 }
@@ -149,15 +150,41 @@ function spreadPhrase(bp) {
   return bp > 0 ? `${bp.toFixed(1)} bp wider` : `${Math.abs(bp).toFixed(1)} bp tighter`;
 }
 
-function creditTitle(sleeves) {
+function nyToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function sessionLabel(dateKey) {
+  if (!dateKey) return "the last session";
+  if (dateKey === nyToday()) return "today";
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date(Date.UTC(year, month - 1, day, 16)));
+}
+
+function creditTitle(sleeves, curve) {
   const hy = sleeves.find((item) => item.symbol === "HYG");
   const ig = sleeves.find((item) => item.symbol === "LQD");
-  const long = sleeves.find((item) => item.symbol === "VCLT")?.excess1;
-  const front = sleeves.find((item) => item.symbol === "VCSH")?.excess1;
-  const dayGap = Number.isFinite(hy?.excess1) && Number.isFinite(ig?.excess1) ? hy.excess1 - ig.excess1 : null;
-  const weekGap = Number.isFinite(hy?.excess5) && Number.isFinite(ig?.excess5) ? hy.excess5 - ig.excess5 : null;
-  if (Number.isFinite(weekGap) && weekGap >= 8 && Number.isFinite(hy?.excess1) && hy.excess1 < -1) {
-    return "High yield widened on the week, and today is only a bounce";
+  const tnx = curve?.find((item) => item.symbol === "^TNX");
+  if (!hy || !ig || !tnx || !Number.isFinite(hy.excess1) || !Number.isFinite(ig.excess1)) return "The credit book is incomplete";
+  const long = sleeves.find((item) => item.symbol === "VCLT")?.excess5;
+  const front = sleeves.find((item) => item.symbol === "VCSH")?.excess5;
+  const dayGap = hy.excess1 - ig.excess1;
+  const weekGap = Number.isFinite(hy.excess5) && Number.isFinite(ig.excess5) ? hy.excess5 - ig.excess5 : null;
+  const when = sessionLabel(hy.asOf || ig.asOf);
+  if (Number.isFinite(weekGap) && weekGap >= 8 && hy.excess1 < -1) {
+    return when === "today"
+      ? "High yield widened on the week, and today is only a bounce"
+      : `High yield widened on the week; ${when} was only a bounce`;
   }
   if (Number.isFinite(weekGap) && weekGap >= 8) return "High yield has widened versus investment grade";
   if (Number.isFinite(weekGap) && weekGap <= -8) return "High yield has tightened versus investment grade";
@@ -165,7 +192,7 @@ function creditTitle(sleeves) {
   if (Number.isFinite(dayGap) && dayGap <= -2.5) return "Investment grade is lagging high yield";
   if (Number.isFinite(hy?.excess1) && Number.isFinite(ig?.excess1) && hy.excess1 <= -2 && ig.excess1 <= -1) return "Credit is tighter versus Treasuries";
   if (Number.isFinite(hy?.excess1) && Number.isFinite(ig?.excess1) && hy.excess1 >= 2 && ig.excess1 >= 1) return "Credit is wider versus Treasuries";
-  if (Number.isFinite(long) && Number.isFinite(front) && long - front >= 2.5) return "Long corporates are the weak sleeve";
+  if (Number.isFinite(long) && Number.isFinite(front) && long - front >= 2.5) return "Long corporates are the weak sleeve over five sessions";
   if ([hy?.excess1, ig?.excess1, long, front].every((value) => !Number.isFinite(value) || Math.abs(value) < 1.2)) return "Credit is quiet versus the Treasury move";
   return "A split corporate book";
 }
@@ -181,37 +208,47 @@ function creditNote(sleeves, curve, slopes) {
   const tenThirty = slopes.find((item) => item.id === "10s30s");
   const paragraphs = [];
   paragraphs.push("These are not quoted option-adjusted spreads. The excess scales a Treasury ETF by the ratio of assumed durations, then turns the residual price gap into basis points. Positive means the corporate ETF lagged that rates move, a wider-spread proxy. Negative means it outperformed, a tighter proxy.");
+  const when = sessionLabel(hyg?.asOf || lqd?.asOf);
+  const onSession = when === "today" ? "on the day" : `on ${when}`;
+  if (!lqd || !hyg) {
+    const missing = [!lqd ? "LQD" : null, !hyg ? "HYG" : null].filter(Boolean).join(" and ");
+    paragraphs.push(`The credit book is incomplete. ${missing} did not load, so this pass does not call the spread quiet.`);
+  }
   if (lqd && hyg) {
-    paragraphs.push(`Broad investment grade, LQD versus the 7–10 year Treasury, is ${spreadPhrase(lqd.excess1)} on the last session and ${spreadPhrase(lqd.excess5)} over five sessions. Broad high yield, HYG versus the 3–7 year Treasury, is ${spreadPhrase(hyg.excess1)} on the day and ${spreadPhrase(hyg.excess5)} over five sessions.`);
+    paragraphs.push(`Broad investment grade, LQD versus the 7–10 year Treasury, is ${spreadPhrase(lqd.excess1)} ${onSession} and ${spreadPhrase(lqd.excess5)} over five sessions. Broad high yield, HYG versus the 3–7 year Treasury, is ${spreadPhrase(hyg.excess1)} ${onSession} and ${spreadPhrase(hyg.excess5)} over five sessions.`);
     if (Number.isFinite(hyg.excess1) && Number.isFinite(lqd.excess1) && Number.isFinite(hyg.excess5) && Number.isFinite(lqd.excess5)) {
       const gap = hyg.excess1 - lqd.excess1;
       const week = hyg.excess5 - lqd.excess5;
-      if (week >= 5 && gap < 0) paragraphs.push(`On the day, high yield beat investment grade by ${Math.abs(gap).toFixed(1)} bp. Over five sessions, high yield is still ${week.toFixed(1)} bp wider than investment grade. Treat the session as a bounce inside a week of decompression.`);
-      else if (week <= -5 && gap > 0) paragraphs.push(`On the day, high yield lagged investment grade by ${gap.toFixed(1)} bp, against a five-session stretch in which high yield had been ${Math.abs(week).toFixed(1)} bp tighter. Today is the give-back.`);
+      if (week >= 5 && gap < 0) paragraphs.push(`${when === "today" ? "Today" : when} high yield beat investment grade by ${Math.abs(gap).toFixed(1)} bp. Over five sessions, high yield is still ${week.toFixed(1)} bp wider than investment grade. Treat that session as a bounce inside a week of decompression.`);
+      else if (week <= -5 && gap > 0) paragraphs.push(`${when === "today" ? "Today" : when} high yield lagged investment grade by ${gap.toFixed(1)} bp, against a five-session stretch in which high yield had been ${Math.abs(week).toFixed(1)} bp tighter. That session is the give-back.`);
       else if (week >= 5) paragraphs.push(`Over five sessions, high yield is ${week.toFixed(1)} bp wider than investment grade. That is decompression: the market is charging more for lower quality, not only for duration.`);
-      else if (gap <= -1.5) paragraphs.push(`High yield beat investment grade by ${Math.abs(gap).toFixed(1)} bp on the day. In the ETF proxy, quality spreads are compressing.`);
-      else if (gap >= 1.5) paragraphs.push(`High yield lagged investment grade by ${gap.toFixed(1)} bp on the day. That is decompression.`);
+      else if (gap <= -2.5) paragraphs.push(`High yield beat investment grade by ${Math.abs(gap).toFixed(1)} bp ${onSession}. In the ETF proxy, quality spreads are compressing.`);
+      else if (gap >= 2.5) paragraphs.push(`High yield lagged investment grade by ${gap.toFixed(1)} bp ${onSession}. That is decompression.`);
       else paragraphs.push("Investment grade and high yield are moving together versus rates, so this is not a quality event.");
     }
   }
-  if (vclt && vcsh && Number.isFinite(vclt.excess1) && Number.isFinite(vcsh.excess1)) {
-    const gap = vclt.excess1 - vcsh.excess1;
-    if (gap >= 2.5) paragraphs.push(`Long investment grade is weaker than short investment grade by ${gap.toFixed(1)} bp after the duration scale. Look at the credit curve before you call it a broad spread move.`);
-    else if (gap <= -2.5) paragraphs.push(`Short investment grade is weaker than the long sleeve by ${Math.abs(gap).toFixed(1)} bp. The front end of credit is the soft part of the curve.`);
-    else paragraphs.push(`Short and long investment grade are within ${Math.abs(gap).toFixed(1)} bp of each other after the duration scale. That is inside the noise of the Treasury match.`);
+  if (vclt && vcsh && Number.isFinite(vclt.excess5) && Number.isFinite(vcsh.excess5)) {
+    const gap = vclt.excess5 - vcsh.excess5;
+    if (gap >= 2.5) paragraphs.push(`Over five sessions, long investment grade is weaker than short investment grade by ${gap.toFixed(1)} bp after the duration scale. Look at the credit curve before you call it a broad spread move.`);
+    else if (gap <= -2.5) paragraphs.push(`Over five sessions, short investment grade is weaker than the long sleeve by ${Math.abs(gap).toFixed(1)} bp. The front end of credit is the soft part of the curve.`);
+    else paragraphs.push(`Over five sessions, short and long investment grade differ by ${Math.abs(gap).toFixed(1)} bp. Anything inside 2.5 bp is noise in this Treasury match.`);
+  }
+  const loudest = sleeves.filter((item) => Number.isFinite(item.excess1)).sort((a, b) => Math.abs(b.excess1) - Math.abs(a.excess1))[0];
+  if (loudest?.symbol === "PFF" && Math.abs(loudest.excess1) >= 8) {
+    paragraphs.push(`The largest one-day cell is preferreds, ${signed(loudest.excess1, 1)} bp. That residual is the equity-like preferred against its Treasury hedge, not a corporate spread.`);
   }
   if (bkln && Number.isFinite(bkln.changePct)) {
     paragraphs.push(`Senior loans, BKLN, are ${signed(bkln.changePct, 2)}% on price. They float, so that print is mostly credit and discount margin. If loans are calm while fixed-rate high yield is moving, rates are doing more of the work than default risk.`);
   }
   if (tnx && tenThirty) {
-    paragraphs.push(`The 10-year is ${tnx.yield.toFixed(3)}% (${signed(tnx.bp, 1)} bp). The 10s30s slope is ${tenThirty.level.toFixed(0)} bp and ${signed(tenThirty.change, 1)} bp on the day. Read the credit excess against that rates move.`);
+    paragraphs.push(`The 10-year quote here is ${tnx.yield.toFixed(3)}% (${signed(tnx.bp, 1)} bp versus its prior close). The 10s30s slope is ${tenThirty.level.toFixed(0)} bp. The credit excess above is ${when}, so do not treat that residual as this minute's spread.`);
   }
   paragraphs.push("Assumed durations are round figures, not today’s fund holdings: SHY 1.9, IEI 4.3, IEF 7.1, TLT 16, VCSH 2.7, VCIT 6.0, LQD 8.2, VCLT 13, SHYG 2.2, HYG 3.5, JNK 3.6, ANGL 5.2, EMB 6.8, preferreds 4.2. The scale assumes a parallel curve shift. Over a month the cumulative chart drifts with carry; a one-day or five-day sum is the cleaner spread impulse. This is a corporate-bond trading proxy, not a TRACE print.");
   const hy = hyg?.excess1;
   const ig = lqd?.excess1;
   return {
     kicker: "Corporate credit",
-    title: creditTitle(sleeves),
+    title: creditTitle(sleeves, curve),
     paragraphs,
     stats: [
       statExcess("IG vs UST", ig, "LQD · 1 day"),

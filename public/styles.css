@@ -64,6 +64,13 @@ img { max-width: 100%; }
 }
 .tag, .muted, .sub { color: var(--muted); }
 .tag { font-size: 12px; margin-top: 4px; }
+.lede {
+  font-family: var(--serif);
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin: 12px 0 6px;
+}
 .clockbox { text-align: right; }
 .clock {
   font-family: var(--mono);
@@ -110,10 +117,11 @@ main {
   border: 0;
   border-radius: 10px;
   padding: 10px 4px;
-  color: var(--faint);
+  min-height: 44px;
+  color: var(--muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 12px;
 }
 .nav button.on {
   color: var(--bg);
@@ -206,19 +214,19 @@ h2 { font-size: 28px; line-height: 1.1; margin: 0 0 8px; }
 .sector {
   border: 1px solid var(--line);
   border-radius: 12px;
-  min-height: 78px;
+  min-height: 58px;
   padding: 8px;
   text-align: left;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  display: block;
 }
+.sector-top { display: flex; justify-content: space-between; gap: 6px; align-items: baseline; }
 .sector b { font-weight: 500; font-size: 13px; }
-.sector em { font-style: normal; color: var(--muted); font-size: 11px; }
+.sector em { display: block; font-style: normal; color: var(--muted); font-size: 11px; margin-top: 4px; }
 .sector strong {
   font-family: var(--mono);
   font-weight: 500;
   font-size: 13px;
+  color: var(--text);
 }
 
 .names {
@@ -302,7 +310,11 @@ h2 { font-size: 28px; line-height: 1.1; margin: 0 0 8px; }
 }
 .chart-head { padding: 4px 8px 8px; }
 .chart-head .q-px { font-size: 28px; }
-#chart-root, #credit-root { height: min(52vh, 460px); min-height: 280px; }
+#chart-root, #credit-root { height: min(42vh, 380px); min-height: 220px; }
+@media (max-width: 480px) {
+  .tag { display: none; }
+  #chart-root, #credit-root { height: min(36vh, 300px); min-height: 200px; }
+}
 .legend {
   display: flex;
   justify-content: space-between;

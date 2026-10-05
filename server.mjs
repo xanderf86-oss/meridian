@@ -100,7 +100,7 @@ const THEMES = [
   { id: "rates", label: "rates", re: /\b(federal reserve|\bfed\b|fomc|powell|treasury|yields?|bond sell-?off|bonds?|rate cut|rate hike|interest rates?|\brates\b)\b/i, symbols: ["TLT", "^TNX", "SPY"] },
   { id: "inflation", label: "inflation", re: /\b(inflation|cpi|pce|consumer prices)\b/i, symbols: ["^TNX", "TLT", "SPY"] },
   { id: "labor", label: "labor", re: /\b(jobs report|nonfarm|payrolls?|unemployment|jobless|labor market|\d[\d,]*\s+jobs|hiring slows)\b/i, symbols: ["SPY", "^TNX", "TLT"] },
-  { id: "oil", label: "oil", re: /\b(crude|oil|brent|wti|opec|gasoline|diesel|barrels|energy prices|energy costs|natural gas)\b/i, symbols: ["CL=F", "XLE"] },
+  { id: "oil", label: "oil", re: /\b(crude|oil|brent|wti|opec|barrels|energy prices|energy costs|natural gas)\b/i, symbols: ["CL=F", "XLE"] },
   { id: "gold", label: "gold", re: /\b(gold|bullion|silver)\b/i, symbols: ["GC=F", "SI=F"] },
   { id: "dollar", label: "dollar", re: /\b(dollar index|u\.?s\.? dollar|greenback|dxy|eurusd|forex)\b/i, symbols: ["DX-Y.NYB", "EURUSD=X"] },
   { id: "crypto", label: "crypto", re: /\b(bitcoin|btc|ethereum|ether|crypto)\b/i, symbols: ["BTC-USD", "ETH-USD"] },
@@ -359,7 +359,8 @@ function mentionedTickers(title) {
 }
 
 function themesFor(title) {
-  return THEMES.filter((theme) => theme.re.test(title)).map((theme) => {
+  return THEMES.filter((theme) => theme.re.test(title)).flatMap((theme) => {
+    if (theme.id === "rates" && /\b(gilt|gilts|mortgage|ecb)\b/i.test(title) && !/\b(treasury|treasuries|fed|fomc|t-note)\b/i.test(title)) return [];
     let symbols = theme.symbols;
     if (theme.id === "gold") {
       const silver = /\bsilver\b/i.test(title);
@@ -373,7 +374,7 @@ function themesFor(title) {
       if (btc && !eth) symbols = ["BTC-USD"];
       if (eth && !btc) symbols = ["ETH-USD"];
     }
-    return { id: theme.id, label: theme.label, symbols };
+    return [{ id: theme.id, label: theme.label, symbols }];
   });
 }
 
@@ -398,7 +399,12 @@ async function loadFeeds() {
       continue;
     }
     const fresh = result.value.items.filter((item) => Date.now() - item.published <= MAX_AGE_MS);
-    sources.push({ name: FEEDS[i].name, ok: true, count: fresh.length, error: null });
+    sources.push({
+      name: FEEDS[i].name,
+      ok: fresh.length > 0,
+      count: fresh.length,
+      error: fresh.length ? null : "no items in the last four days",
+    });
     items.push(...fresh);
   }
   return { sources, items };
@@ -434,7 +440,7 @@ async function loadYahooNews() {
   return {
     source: {
       name: "Yahoo Finance",
-      ok: failed < YAHOO_QUERIES.length,
+      ok: failed === 0,
       count: items.length,
       error: failed ? `${failed} of ${YAHOO_QUERIES.length} searches failed` : null,
     },
@@ -532,15 +538,63 @@ function downsample(values, count) {
   return out;
 }
 
-function sparkFrom(meta, bars) {
+function nyParts(unixSeconds) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(unixSeconds * 1000))) {
+    if (part.type !== "literal") parts[part.type] = part.value;
+  }
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const weekdayIndex = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday);
+  return {
+    ...parts,
+    minutes,
+    weekdayIndex,
+    day: `${parts.year}-${parts.month}-${parts.day}`,
+    regular: weekdayIndex >= 1 && weekdayIndex <= 5 && minutes >= 9 * 60 + 30 && minutes < 16 * 60,
+  };
+}
+
+function isCashBook(spec) {
+  if (!spec || spec.kind === "yield") return false;
+  return !["futures", "fx", "crypto", "commodity"].includes(spec.group);
+}
+
+function sparkFrom(meta, bars, cash) {
   const regular = meta.currentTradingPeriod?.regular;
-  let slice = bars;
+  const asOf = Number(meta.regularMarketTime);
+  const fresh = Number.isFinite(asOf) && Date.now() / 1000 - asOf < 6 * 3600;
   if (regular?.start && regular?.end) {
     const session = bars.filter((bar) => bar.time >= regular.start && bar.time <= regular.end + 60);
-    if (session.length >= 2) slice = session;
+    if (session.length >= 2) return downsample(session.map((bar) => bar.close), 36);
   }
-  if (slice.length < 2) slice = bars.slice(-80);
-  return downsample(slice.map((bar) => bar.close), 36);
+  if (cash && !fresh) {
+    const byDay = new Map();
+    for (const bar of bars) {
+      const part = nyParts(bar.time);
+      if (!part.regular) continue;
+      if (!byDay.has(part.day)) byDay.set(part.day, []);
+      byDay.get(part.day).push(bar);
+    }
+    const last = [...byDay.values()].at(-1);
+    if (last && last.length >= 2) return downsample(last.map((bar) => bar.close), 36);
+  }
+  return downsample(bars.slice(-80).map((bar) => bar.close), 36);
+}
+
+function quotePrint(spec, asOf) {
+  const ageHours = Number.isFinite(asOf) ? (Date.now() / 1000 - asOf) / 3600 : 99;
+  if (ageHours > 16) return "prior";
+  if (isCashBook(spec) && ageHours > 8) return "prior";
+  return "live";
 }
 
 async function loadChart(symbol, interval, range) {
@@ -572,7 +626,8 @@ function quoteFrom(spec, parsed) {
     change: move.change,
     changePct: move.changePct,
     bp: move.bp,
-    spark: sparkFrom(parsed.meta, parsed.bars),
+    spark: sparkFrom(parsed.meta, parsed.bars, isCashBook(spec)),
+    print: quotePrint(spec, Number(parsed.meta.regularMarketTime) || null),
     asOf: parsed.meta.regularMarketTime || null,
     priceHint: parsed.meta.priceHint ?? 2,
     exchange: parsed.meta.fullExchangeName || parsed.meta.exchangeName || "",
@@ -591,9 +646,7 @@ function sessionBarsEndingAt(bars, endIndex) {
   return collected.reverse();
 }
 
-function measure(bars, publishedMs, kind) {
-  if (!bars?.length) return null;
-  const published = publishedMs / 1000;
+function measureExtended(bars, published, kind) {
   let beforeIndex = -1;
   for (let index = 0; index < bars.length; index += 1) {
     if (bars[index].time <= published) beforeIndex = index;
@@ -617,6 +670,84 @@ function measure(bars, publishedMs, kind) {
     }
   }
   return null;
+}
+
+function measureCash(bars, published, kind) {
+  const regular = bars.filter((bar) => nyParts(bar.time).regular);
+  if (regular.length < 2) return null;
+  let before = null;
+  let after = null;
+  for (const bar of regular) {
+    if (bar.time <= published) before = bar;
+    else if (!after) after = bar;
+  }
+  const publishedParts = nyParts(published);
+  if (
+    before
+    && after
+    && nyParts(before.time).day === nyParts(after.time).day
+    && publishedParts.regular
+    && after.time - published <= 18 * 3600
+  ) {
+    let end = after;
+    for (const bar of regular) {
+      if (bar.time <= after.time) continue;
+      if (nyParts(bar.time).day !== nyParts(after.time).day) break;
+      if (bar.time - end.time > 30 * 60) break;
+      end = bar;
+      if (bar.time >= published + 30 * 60) break;
+    }
+    return buildMove(before, end, kind, "reaction", end.time - published);
+  }
+  const sessions = new Map();
+  for (const bar of regular) {
+    if (bar.time > published) continue;
+    const day = nyParts(bar.time).day;
+    if (!sessions.has(day)) sessions.set(day, []);
+    sessions.get(day).push(bar);
+  }
+  const session = sessions.get([...sessions.keys()].sort().at(-1));
+  if (!session || session.length < 4) return null;
+  return buildMove(session[0], session.at(-1), kind, "recap", 0);
+}
+
+function measureYield(bars, published) {
+  const reaction = measureExtended(bars, published, "yield");
+  if (reaction?.mode === "reaction") return reaction;
+  let beforeIndex = -1;
+  for (let index = 0; index < bars.length; index += 1) {
+    if (bars[index].time <= published) beforeIndex = index;
+    else break;
+  }
+  if (beforeIndex < 0 || published - bars[beforeIndex].time > 96 * 3600) return reaction;
+  let end = bars[beforeIndex];
+  const endParts = nyParts(end.time);
+  if (endParts.day === nyParts(published).day && !endParts.regular && endParts.minutes < 9 * 60 + 30) {
+    const prior = [...bars].reverse().find((bar) => nyParts(bar.time).day < endParts.day);
+    if (prior) end = prior;
+  }
+  const endDay = nyParts(end.time).day;
+  const prev = [...bars].reverse().find((bar) => nyParts(bar.time).day < endDay);
+  const start = prev || bars.find((bar) => nyParts(bar.time).day === endDay);
+  if (!start) return reaction;
+  const move = buildMove(start, end, "yield", "recap", 0);
+  if (!move) return reaction;
+  const endLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(end.time * 1000));
+  move.label = prev ? `from the prior close through ${endLabel} ET` : `across ${endLabel} ET`;
+  return move;
+}
+
+function measure(bars, publishedMs, kind, cash) {
+  if (!bars?.length) return null;
+  const published = publishedMs / 1000;
+  if (kind === "yield") return measureYield(bars, published);
+  if (cash) return measureCash(bars, published, kind);
+  return measureExtended(bars, published, kind);
 }
 
 function buildMove(start, end, kind, mode, elapsedSec) {
@@ -664,7 +795,7 @@ function chooseAlignment(story, book) {
     if (!symbol || list.some((item) => item.symbol === symbol)) return;
     const series = book.get(symbol);
     if (!series) return;
-    const move = measure(series.bars, story.published, series.kind);
+    const move = measure(series.bars, story.published, series.kind, isCashBook(series));
     if (!move) return;
     if (move.mode === "recap" && note === "equities complex") return;
     list.push({ symbol, note, ...move, score: scoreMove(move, list === named) });
@@ -827,22 +958,34 @@ function readTape(bySymbol, clock) {
     sentences.push(`S&P futures lead Nasdaq futures by ${(es - nq).toFixed(2)} percentage points. The market is not paying up for the growth complex.`);
   }
 
-  if (spy != null && vix != null && spy <= -0.3 && vix >= 2) {
-    sentences.push(`VIX is ${signed(vix, 1)}% with equities offered, so the decline has a volatility bid under it.`);
-  } else if (spy != null && vix != null && spy >= 0.3 && vix <= -2) {
+  const equityLive = clock.equity === "open" ? spy : es;
+  const equityName = clock.equity === "open" ? "equities" : "S&P futures";
+  if (equityLive != null && vix != null && equityLive <= -0.15 && vix >= 3) {
+    sentences.push(`VIX is ${signed(vix, 1)}% with ${equityName} offered, so the decline has a volatility bid under it.`);
+  } else if (equityLive != null && vix != null && vix >= 4 && equityLive <= 0.2) {
+    sentences.push(`VIX is ${signed(vix, 1)}% while ${equityName} are ${signed(equityLive, 2)}%. The vol bid is ahead of the equity book.`);
+  } else if (spy != null && vix != null && clock.equity === "open" && spy >= 0.3 && vix <= -2) {
     sentences.push(`VIX is ${signed(vix, 1)}% while the S&P ETF is higher. The rally is happening with volatility offered.`);
   }
 
   if (cl != null && cl <= -1) {
-    const energy = xle != null ? ` Energy equities (XLE) are ${signed(xle, 2)}%.` : "";
-    sentences.push(`WTI is ${signed(cl, 2)}%.${energy} If equities are not falling with crude, this looks like supply rather than a demand scare.`);
+    if (clock.equity !== "open" && es != null) {
+      const follow = es > -0.3
+        ? "Equity futures are not following crude lower."
+        : "Equity futures are offered with crude.";
+      sentences.push(`WTI is ${signed(cl, 2)}%. S&P futures are ${signed(es, 2)}%. ${follow}`);
+    } else {
+      const energy = xle != null ? ` Energy equities (XLE) are ${signed(xle, 2)}%.` : "";
+      sentences.push(`WTI is ${signed(cl, 2)}%.${energy} If equities are not falling with crude, this looks like supply rather than a demand scare.`);
+    }
   } else if (cl != null && cl >= 1) {
     sentences.push(`WTI is ${signed(cl, 2)}%. A sticky oil bid is an inflation impulse at the margin.`);
   }
 
   if (dxy != null && Math.abs(dxy) >= 0.25) {
     const euro = eur != null ? ` EURUSD is ${signed(eur, 2)}%.` : "";
-    sentences.push(`The dollar index is ${signed(dxy, 2)}%.${euro} A firmer dollar tightens financial conditions even when the S&P is green.`);
+    const equityWord = clock.equity === "open" ? "the S&P is green" : "equity futures are calm";
+    sentences.push(`The dollar index is ${signed(dxy, 2)}%.${euro} A firmer dollar tightens financial conditions even when ${equityWord}.`);
   }
 
   if (hyg != null && tlt != null && hyg <= -0.3 && tlt <= -0.4) {
@@ -861,25 +1004,37 @@ function readTape(bySymbol, clock) {
   return sentences.slice(0, 5);
 }
 
-function noteTitle(bySymbol) {
-  const nq = bySymbol.get("NQ=F")?.changePct ?? 0;
-  const es = bySymbol.get("ES=F")?.changePct ?? 0;
-  const tlt = bySymbol.get("TLT")?.changePct ?? 0;
-  const bp = bySymbol.get("^TNX")?.bp ?? 0;
-  const cl = bySymbol.get("CL=F")?.changePct ?? 0;
-  const dxy = bySymbol.get("DX-Y.NYB")?.changePct ?? 0;
-  const vix = bySymbol.get("^VIX")?.changePct ?? 0;
-  const spy = bySymbol.get("SPY")?.changePct ?? 0;
-  if (tlt <= -1 && bp >= 2 && nq >= 0.3) return "Yields up, and Nasdaq futures are still bid";
-  if (tlt <= -1 && spy <= -0.25) return "A bond selloff is leaking into equities";
-  if (spy <= -0.5 && vix >= 4) return "Risk off, and volatility is confirming";
-  if (spy >= 0.35 && vix <= -3 && bp < 1.5) return "Equities higher, with volatility offered";
-  if (cl <= -1 && spy > 0) return "Crude is offered, and equities are not following it";
-  if (nq - es >= 0.45) return "Nasdaq futures are carrying the tape";
-  if (es - nq >= 0.45) return "The broad future is ahead of the Nasdaq";
-  if (dxy >= 0.35 && spy < 0) return "A firmer dollar against a soft equity tape";
-  if (Math.abs(tlt) >= Math.abs(spy) && Math.abs(tlt) >= 0.8) return "Duration is the larger move";
-  return "A mixed cross-asset book";
+function num(quote, field) {
+  const value = quote?.[field];
+  return Number.isFinite(value) ? value : null;
+}
+
+function noteTitle(bySymbol, clock) {
+  const nq = num(bySymbol.get("NQ=F"), "changePct");
+  const es = num(bySymbol.get("ES=F"), "changePct");
+  const cl = num(bySymbol.get("CL=F"), "changePct");
+  const dxy = num(bySymbol.get("DX-Y.NYB"), "changePct");
+  const vix = num(bySymbol.get("^VIX"), "changePct");
+  const cash = clock.equity === "open";
+  const spy = cash ? num(bySymbol.get("SPY"), "changePct") : null;
+  const tlt = cash ? num(bySymbol.get("TLT"), "changePct") : null;
+  const bp = num(bySymbol.get("^TNX"), "bp");
+  const equity = cash ? spy : es;
+  if ([nq, es, cl, dxy, vix].every((value) => value == null)) return "The tape is missing the live book";
+  if (vix != null && vix >= 4 && equity != null && equity <= 0.2) return "Volatility is bid against a soft equity book";
+  if (cl != null && cl <= -1 && equity != null && equity > -0.3) {
+    return cash ? "Crude is offered, and equities are not following it" : "Crude is offered, and equity futures are not following it";
+  }
+  if (cl != null && cl <= -1 && equity != null && equity <= -0.4) return "Crude and equities are both offered";
+  if (nq != null && es != null && nq - es >= 0.45) return "Nasdaq futures are carrying the tape";
+  if (nq != null && es != null && es - nq >= 0.45) return "The broad future is ahead of the Nasdaq";
+  if (dxy != null && dxy >= 0.35 && equity != null && equity < 0) return "A firmer dollar against a soft equity tape";
+  if (tlt != null && bp != null && tlt <= -1 && bp >= 2 && nq != null && nq >= 0.3) return "Yields up, and Nasdaq futures are still bid";
+  if (tlt != null && spy != null && tlt <= -1 && spy <= -0.25) return "A bond selloff is leaking into equities";
+  if (spy != null && vix != null && spy <= -0.5 && vix >= 4) return "Risk off, and volatility is confirming";
+  if (spy != null && vix != null && spy >= 0.35 && vix <= -3 && (bp == null || bp < 1.5)) return "Equities higher, with volatility offered";
+  if (tlt != null && spy != null && Math.abs(tlt) >= Math.abs(spy) && Math.abs(tlt) >= 0.8) return "Duration is the larger move";
+  return cash ? "A mixed cross-asset book" : "A mixed futures book";
 }
 
 function themeCounts(news) {
@@ -904,19 +1059,33 @@ function magnitude(story) {
 
 function buildBrief(quotes, news, clock) {
   const bySymbol = new Map(quotes.map((quote) => [quote.symbol, quote]));
+  const byMove = (quote) => Math.abs(quote.changePct);
+  const liveLeaders = [...quotes]
+    .filter((quote) => ["futures", "commodity", "fx", "crypto"].includes(quote.group) && quote.changePct != null && quote.kind !== "yield")
+    .sort((a, b) => byMove(b) - byMove(a))
+    .slice(0, 3);
   const leaders = [...quotes]
     .filter((quote) => quote.changePct != null && quote.kind !== "yield" && quote.kind !== "vol")
-    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))
+    .sort((a, b) => byMove(b) - byMove(a))
     .slice(0, 3);
-  const biggestSingle = [...quotes]
+  const cashNames = [...quotes]
     .filter((quote) => quote.group === "single" && quote.changePct != null)
-    .sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))[0];
+    .sort((a, b) => byMove(b) - byMove(a))
+    .slice(0, 3);
+  const biggestSingle = cashNames[0];
   const spyMove = bySymbol.get("SPY")?.changePct;
-  const leaderLine = leaders.map((quote) => quoteSentence(quote)).filter(Boolean).join("; ");
   const tape = readTape(bySymbol, clock);
-  if (leaderLine) tape.splice(1, 0, `Largest marks versus the prior close: ${leaderLine}.`);
-  if (biggestSingle && spyMove != null && Math.abs(biggestSingle.changePct) >= 2 && Math.abs(biggestSingle.changePct - spyMove) >= 1.5) {
-    tape.splice(2, 0, `${biggestSingle.name} is ${signed(biggestSingle.changePct, 2)}% against the S&P ETF at ${signed(spyMove, 2)}%. The index is not the story at the single-name level.`);
+  if (clock.equity === "open") {
+    const leaderLine = leaders.map((quote) => quoteSentence(quote)).filter(Boolean).join("; ");
+    if (leaderLine) tape.splice(1, 0, `Largest marks versus the prior close: ${leaderLine}.`);
+    if (biggestSingle && spyMove != null && Math.abs(biggestSingle.changePct) >= 2 && Math.abs(biggestSingle.changePct - spyMove) >= 1.5) {
+      tape.splice(2, 0, `${biggestSingle.name} is ${signed(biggestSingle.changePct, 2)}% against the S&P ETF at ${signed(spyMove, 2)}%. The index is not the story at the single-name level.`);
+    }
+  } else {
+    const liveLine = liveLeaders.map((quote) => quoteSentence(quote)).filter(Boolean).join("; ");
+    const cashLine = cashNames.map((quote) => quoteSentence(quote)).filter(Boolean).join("; ");
+    if (liveLine) tape.splice(1, 0, `Largest live marks: ${liveLine}.`);
+    if (cashLine) tape.splice(2, 0, `Prior cash close, not this morning's tape: ${cashLine}.`);
   }
 
   const reactions = news.filter((story) => story.alignment?.material && story.alignment.mode === "reaction");
@@ -951,7 +1120,7 @@ function buildBrief(quotes, news, clock) {
   if (themes.length) wire.push(`The wires that answered are clustered around ${joinAnd(themes)}.`);
   const leadStories = diversify(reactions.length ? reactions : recaps, 5);
   if (reactions[0]) {
-    wire.push(`The tightest post-publication print is “${leadStories[0].title}” (${leadStories[0].source}): ${leadStories[0].alignment.line}. ${leadStories[0].alignment.note}.`);
+    wire.push(`The largest post-publication print is “${leadStories[0].title}” (${leadStories[0].source}): ${leadStories[0].alignment.line}. ${leadStories[0].alignment.note}.`);
   } else if (recaps[0]) {
     wire.push(`Nothing fresh has a print after it. The wires are mostly recounting the last session. The largest of those recap matches is “${leadStories[0].title}” (${leadStories[0].source}): ${leadStories[0].alignment.line}.`);
   } else {
@@ -966,6 +1135,7 @@ function buildBrief(quotes, news, clock) {
     line: story.alignment.line,
     symbol: story.alignment.symbol,
     time: story.alignment.to,
+    published: story.published,
     mode: story.alignment.mode,
   });
 
@@ -988,7 +1158,7 @@ function buildBrief(quotes, news, clock) {
 
   return {
     kicker: clock.equity === "open" ? "Session note" : "Book note",
-    title: noteTitle(bySymbol),
+    title: noteTitle(bySymbol, clock),
     paragraphs: [...tape, ...wire],
     stats,
     aligned: leadStories.map(toCard),
@@ -1078,9 +1248,14 @@ async function buildSnapshot() {
   return snapshot;
 }
 
+function withAge(data, at) {
+  if (!data || Date.now() - at <= 90_000) return data;
+  return { ...data, stale: true };
+}
+
 function getSnapshot(fresh = false) {
   const freshEnough = cache && Date.now() - cache.at < TTL_MS;
-  if (!fresh && freshEnough) return Promise.resolve(cache.data);
+  if (!fresh && freshEnough) return Promise.resolve(withAge(cache.data, cache.at));
   if (!refreshing) {
     refreshing = buildSnapshot()
       .then((data) => {
@@ -1091,7 +1266,7 @@ function getSnapshot(fresh = false) {
         refreshing = null;
       });
   }
-  if (!fresh && cache) return Promise.resolve(cache.data);
+  if (!fresh && cache) return Promise.resolve(withAge(cache.data, cache.at));
   return refreshing;
 }
 
@@ -1127,19 +1302,20 @@ async function chartPayload(symbol, rangeKey) {
         return Math.abs(item.time - mark.time) < Math.abs(best.time - mark.time) ? item : best;
       }, null);
       if (!bar) continue;
-      const limit = rangeKey === "1D" || rangeKey === "5D" ? 6 * 3600 : 5 * 86400;
+      const limit = rangeKey === "1D" ? 6 * 3600 : rangeKey === "5D" ? 3 * 86400 : 8 * 86400;
       if (Math.abs(bar.time - mark.time) > limit) continue;
       markers.push({ ...mark, time: bar.time });
     }
   }
   const unique = [];
   const seen = new Set();
-  for (const marker of markers.sort((a, b) => a.time - b.time)) {
+  for (const marker of markers.sort((a, b) => b.time - a.time)) {
     const key = `${marker.time}|${marker.code}`;
     if (seen.has(key)) continue;
     seen.add(key);
     unique.push(marker);
   }
+  const capped = unique.slice(0, 12).sort((a, b) => a.time - b.time);
   return {
     symbol: quote.symbol,
     name: quote.name,
@@ -1156,7 +1332,7 @@ async function chartPayload(symbol, rangeKey) {
     interval: spec.interval,
     range: rangeKey,
     bars: quote.bars,
-    markers: unique.slice(0, 16),
+    markers: capped,
   };
 }
 

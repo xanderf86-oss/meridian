@@ -19,6 +19,8 @@ const state = {
   candle: null,
   volume: null,
   loadingChart: false,
+  chartTicket: 0,
+  chartQuote: null,
   credit: null,
   creditError: "",
   creditSeries: "LQD",
@@ -55,12 +57,12 @@ function setView(view) {
 }
 
 async function loadSnapshot(fresh = false) {
-  const response = await fetch(fresh ? "/api/snapshot?fresh=1" : "/api/snapshot");
-  if (!response.ok) throw new Error("The tape did not answer.");
+  const response = await fetch(fresh ? "/api/snapshot?fresh=1" : "/api/snapshot", { signal: AbortSignal.timeout(25000) });
+  if (!response.ok) throw new Error(response.status === 503 ? "The tape is still opening." : "The tape did not answer.");
   state.data = await response.json();
   state.error = "";
   paint(true);
-  if (state.view === "chart") loadChart();
+  if (state.view === "chart" && !state.loadingChart) loadChart();
 }
 
 function paint(preserveScroll) {
@@ -85,9 +87,12 @@ function paint(preserveScroll) {
   }
   const y = preserveScroll ? window.scrollY : 0;
   if (!state.data && state.view !== "bonds") {
-    main.innerHTML = state.error
-      ? `<div class="banner bad">${escapeHtml(state.error)}</div>`
-      : "";
+    main.innerHTML = `
+      <section class="loading">
+        <p class="kicker">Meridian</p>
+        <h1>${state.error ? escapeHtml(state.error) : "Opening the book"}</h1>
+        <p class="muted">${state.error ? "Trying again on the next pass." : "Pulling Yahoo Finance and the wires."}</p>
+      </section>`;
     return;
   }
   if (state.view === "tape") main.innerHTML = tapeHtml();
@@ -117,9 +122,13 @@ function tapeHtml() {
   const rail = quotes.filter((quote) => ["vol", "rates", "credit", "fx", "commodity", "crypto"].includes(quote.group));
   const sectors = quotes.filter((quote) => quote.group === "sector");
   const names = quotes.filter((quote) => quote.group === "single");
+  const brief = state.data.brief;
+  const prior = state.data.clock?.equity !== "open";
   return `
     ${bannerHtml()}
-    <div class="section-label"><span>Futures and cash beta</span><small>vs prior close</small></div>
+    <p class="lede">${escapeHtml(brief?.title || "")}</p>
+    ${prior ? `<p class="muted">Index ETFs and single names are the prior cash close. Futures, dollar, commodities, and crypto are the live book.</p>` : ""}
+    <div class="section-label"><span>Futures and cash beta</span><small>${prior ? "live vs prior close" : "vs prior close"}</small></div>
     <div class="featured">${featured.map(quoteCard).join("")}</div>
     <div class="section-label"><span>Rates, dollar, commodity, crypto</span><small>swipe</small></div>
     <div class="rail">${rail.map(quoteCard).join("")}</div>
@@ -136,11 +145,14 @@ function tapeHtml() {
 function quoteCard(quote) {
   const direction = directionOf(quote);
   const change = quote.kind === "yield" ? `${signed(quote.bp, 1)} bp` : `${signed(quote.changePct, 2)}%`;
+  const stamp = quote.print === "prior"
+    ? `Prior close${quote.asOf ? ` · ${formatEt(quote.asOf)}` : ""}`
+    : (quote.asOf ? formatEt(quote.asOf) : "");
   return `
     <button class="quote" type="button" data-symbol="${escapeHtml(quote.symbol)}">
-      <div class="q-top"><span class="q-name">${escapeHtml(quote.name)}</span><span class="chg ${direction}">${change}</span></div>
+      <div class="q-top"><span class="q-name">${escapeHtml(quote.symbol)}</span><span class="chg ${direction}">${change}</span></div>
       <div class="q-px">${formatPrice(quote.price, quote.kind, quote.priceHint)}</div>
-      <div class="q-sub">${quote.asOf ? escapeHtml(formatEt(quote.asOf)) : ""}</div>
+      <div class="q-sub">${escapeHtml(quote.name)}${stamp ? ` · ${escapeHtml(stamp)}` : ""}</div>
       ${sparkSvg(quote.spark, direction)}
     </button>
   `;
@@ -156,9 +168,8 @@ function sectorCard(quote) {
       : "rgba(42, 51, 44, 0.4)";
   return `
     <button class="sector" type="button" data-symbol="${escapeHtml(quote.symbol)}" style="background:${background}">
-      <b>${escapeHtml(quote.name)}</b>
+      <span class="sector-top"><b>${escapeHtml(quote.name)}</b><strong>${signed(quote.changePct, 2)}%</strong></span>
       <em>${escapeHtml(quote.symbol)}</em>
-      <strong class="${direction}">${signed(quote.changePct, 2)}%</strong>
     </button>
   `;
 }
@@ -178,8 +189,8 @@ function sparkSvg(values, direction) {
 }
 
 function sourceChip(source) {
-  const mark = source.ok ? `${source.count}` : "down";
-  return `<span class="source ${source.ok ? "" : "bad"}">${escapeHtml(source.name)} ${mark}</span>`;
+  const mark = source.ok ? `${source.count}` : `down${source.error ? ` · ${source.error}` : ""}`;
+  return `<span class="source ${source.ok ? "" : "bad"}">${escapeHtml(source.name)} ${escapeHtml(mark)}</span>`;
 }
 
 function wireHtml() {
@@ -257,11 +268,16 @@ function statCard(stat) {
 }
 
 function linkedCard(item) {
+  const when = item.published ? relTime(item.published) : "";
+  const align = item.symbol
+    ? `<button class="align" type="button" data-symbol="${escapeHtml(item.symbol)}" data-time="${item.time || ""}"><span class="line">${escapeHtml(item.line)}</span></button>`
+    : `<em>${escapeHtml(item.line)}</em>`;
   return `
-    <a class="linked" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
-      <strong>${escapeHtml(item.title)}</strong>
-      <em>${escapeHtml(item.source)} · ${escapeHtml(item.line)}</em>
-    </a>
+    <article class="linked">
+      <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer"><strong>${escapeHtml(item.title)}</strong></a>
+      <em>${escapeHtml(item.source)}${when ? ` · ${escapeHtml(when)}` : ""}</em>
+      ${align}
+    </article>
   `;
 }
 
@@ -276,11 +292,11 @@ function chartShellHtml() {
     <div class="toolbar" id="symbol-pills">${pillSymbols().map((symbol) => `<button class="seg ${symbol === state.symbol ? "on" : ""}" type="button" data-symbol="${escapeHtml(symbol)}">${escapeHtml(shortName(symbol))}</button>`).join("")}</div>
     <div class="chart-card">
       <div class="chart-head" id="chart-head">${chartHeadHtml(quote)}</div>
-      <div class="legend" id="legend"><span>${escapeHtml(state.range)} · times follow your phone</span><span id="ohlc"></span></div>
-      <div id="chart-root"></div>
       <div class="toolbar">
         ${["1D", "5D", "1M", "3M", "1Y"].map((range) => `<button class="seg ${state.range === range ? "on" : ""}" type="button" data-range="${range}">${range}</button>`).join("")}
       </div>
+      <div class="legend" id="legend"><span>${escapeHtml(state.range)} · times follow your phone</span><span id="ohlc"></span></div>
+      <div id="chart-root"></div>
     </div>
     <div class="section-label"><span>Headlines on this symbol</span></div>
     <div id="chart-stories">${chartStoriesHtml()}</div>
@@ -313,10 +329,22 @@ function pillSymbols() {
   return base;
 }
 
+function activeQuote() {
+  const taped = findQuote(state.symbol);
+  if (taped) return taped;
+  if (state.chartQuote?.symbol === state.symbol) return state.chartQuote;
+  return null;
+}
+
 function renderChartChrome() {
   const head = document.querySelector("#chart-head");
   const stories = document.querySelector("#chart-stories");
-  if (head) head.innerHTML = chartHeadHtml(findQuote(state.symbol));
+  const pills = document.querySelector("#symbol-pills");
+  if (pills) {
+    pills.querySelectorAll("[data-symbol]").forEach((node) => node.classList.toggle("on", node.dataset.symbol === state.symbol));
+  }
+  document.querySelectorAll("[data-range]").forEach((button) => button.classList.toggle("on", button.dataset.range === state.range));
+  if (head) head.innerHTML = chartHeadHtml(activeQuote());
   if (stories) {
     stories.innerHTML = chartStoriesHtml();
     bindStoryButtons(stories);
@@ -325,14 +353,9 @@ function renderChartChrome() {
 
 function bindMain() {
   main.querySelectorAll("[data-symbol]").forEach((node) => {
-    if (node.dataset.bound) return;
+    if (node.dataset.bound || node.classList.contains("align")) return;
     node.dataset.bound = "1";
-    node.addEventListener("click", () => {
-      state.symbol = node.dataset.symbol;
-      state.focusTime = node.dataset.time ? Number(node.dataset.time) : null;
-      state.hits = [];
-      setView("chart");
-    });
+    node.addEventListener("click", () => openChart(node.dataset.symbol, node.dataset.time));
   });
   main.querySelectorAll("[data-filter]").forEach((node) => {
     node.addEventListener("click", () => {
@@ -368,12 +391,27 @@ function bindStoryButtons(root) {
   root.querySelectorAll(".align").forEach((node) => {
     if (node.dataset.bound) return;
     node.dataset.bound = "1";
-    node.addEventListener("click", () => {
-      state.symbol = node.dataset.symbol;
-      state.focusTime = Number(node.dataset.time);
-      setView("chart");
-    });
+    node.addEventListener("click", () => openChart(node.dataset.symbol, node.dataset.time));
   });
+}
+
+function rangeForFocus(unix) {
+  const age = Date.now() / 1000 - Number(unix);
+  if (!Number.isFinite(age) || age <= 22 * 3600) return "1D";
+  if (age <= 5 * 86400) return "5D";
+  if (age <= 32 * 86400) return "1M";
+  if (age <= 100 * 86400) return "3M";
+  return "1Y";
+}
+
+function openChart(symbol, time) {
+  state.symbol = symbol;
+  const focus = Number(time);
+  state.focusTime = Number.isFinite(focus) && focus > 0 ? focus : null;
+  if (state.focusTime) state.range = rangeForFocus(state.focusTime);
+  state.fitKey = "";
+  state.hits = [];
+  setView("chart");
 }
 
 let searchTimer = 0;
@@ -414,31 +452,44 @@ function scheduleSearch() {
 
 async function loadChart() {
   if (state.view !== "chart") return;
+  const ticket = state.chartTicket + 1;
+  state.chartTicket = ticket;
+  const symbol = state.symbol;
+  const range = state.range;
   state.loadingChart = true;
   try {
-    const response = await fetch(`/api/chart?symbol=${encodeURIComponent(state.symbol)}&range=${encodeURIComponent(state.range)}`);
+    const response = await fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`, { signal: AbortSignal.timeout(12000) });
+    if (ticket !== state.chartTicket) return;
     if (!response.ok) throw new Error("Yahoo had no bars for that symbol.");
     const payload = await response.json();
+    if (ticket !== state.chartTicket || state.symbol !== symbol || state.range !== range) return;
+    state.chartQuote = {
+      symbol: payload.symbol,
+      name: payload.name,
+      exchange: payload.exchange,
+      kind: payload.kind,
+      bp: payload.bp,
+      changePct: payload.changePct,
+      price: payload.price,
+      priceHint: payload.priceHint,
+    };
     if (!document.querySelector("#chart-root")) paint(false);
-    drawChart(payload);
-    const head = document.querySelector("#chart-head");
-    if (head) {
-      head.innerHTML = chartHeadHtml({
-        name: payload.name,
-        exchange: payload.exchange,
-        kind: payload.kind,
-        bp: payload.bp,
-        changePct: payload.changePct,
-        price: payload.price,
-        priceHint: payload.priceHint,
-      });
+    if (!document.querySelector("#chart-root") || ticket !== state.chartTicket) return;
+    if (!payload.bars || payload.bars.length < 2) {
+      destroyChart();
+      document.querySelector("#chart-root").innerHTML = `<div class="empty">No bars for this range.</div>`;
+      return;
     }
+    drawChart(payload);
     renderChartChrome();
   } catch (error) {
+    if (ticket !== state.chartTicket) return;
+    destroyChart();
     const root = document.querySelector("#chart-root");
-    if (root) root.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+    const message = error.name === "TimeoutError" ? "The chart is still loading." : error.message;
+    if (root) root.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
   } finally {
-    state.loadingChart = false;
+    if (ticket === state.chartTicket) state.loadingChart = false;
   }
 }
 
@@ -504,13 +555,16 @@ function drawChart(payload) {
     value: bar.volume || 0,
     color: bar.close >= bar.open ? "rgba(197, 224, 122, 0.35)" : "rgba(240, 113, 103, 0.35)",
   })));
-  const markers = (payload.markers || []).slice(0, 12).map((marker) => ({
-    time: marker.time,
-    position: marker.pct >= 0 ? "aboveBar" : "belowBar",
-    color: marker.pct >= 0 ? "#e0c48a" : "#f07167",
-    shape: "circle",
-    text: marker.code,
-  }));
+  const markers = [...(payload.markers || [])]
+    .sort((a, b) => a.time - b.time)
+    .slice(-12)
+    .map((marker) => ({
+      time: marker.time,
+      position: marker.pct >= 0 ? "aboveBar" : "belowBar",
+      color: marker.pct >= 0 ? "#e0c48a" : "#f07167",
+      shape: "circle",
+      text: (marker.title || marker.code || "").replace(/\s+/g, " ").split(" ").slice(0, 4).join(" "),
+    }));
   state.candle.setMarkers(markers);
   state.chart.timeScale().applyOptions({
     timeVisible: state.range === "1D" || state.range === "5D",
@@ -541,6 +595,7 @@ function destroyChart() {
     state.candle = null;
     state.volume = null;
   }
+  state.fitKey = "";
 }
 
 function priceFormat(payload) {
@@ -559,8 +614,11 @@ function shortName(symbol) {
 }
 
 function bannerHtml() {
-  if (!state.error) return "";
-  return `<div class="banner bad">${escapeHtml(state.error)}</div>`;
+  if (state.error) return `<div class="banner bad">${escapeHtml(state.error)}</div>`;
+  if (state.data?.stale) return `<div class="banner">Last good book, ${escapeHtml(ago(state.data.asOf))} old.</div>`;
+  const down = (state.data?.sources || []).filter((source) => !source.ok);
+  if (down.length) return `<div class="banner">Wire trouble: ${escapeHtml(down.map((source) => source.name).slice(0, 3).join(", "))}${down.length > 3 ? "…" : ""}.</div>`;
+  return "";
 }
 
 function directionOf(quote) {
@@ -708,11 +766,11 @@ function bondsHtml() {
       ${chartSeries().map((symbol) => `<button class="seg ${state.creditSeries === symbol ? "on" : ""}" type="button" data-series="${symbol}">${escapeHtml(seriesLabel(symbol))}</button>`).join("")}
     </div>
     <div class="chart-card">
-      <div class="legend" id="credit-legend"><span>Excess versus duration-scaled Treasuries</span></div>
-      <div id="credit-root"></div>
       <div class="toolbar">
         ${["1M", "3M", "1Y"].map((range) => `<button class="seg ${state.creditRange === range ? "on" : ""}" type="button" data-credit-range="${range}">${range}</button>`).join("")}
       </div>
+      <div class="legend" id="credit-legend"><span>Excess versus duration-scaled Treasuries</span></div>
+      <div id="credit-root"></div>
     </div>
     <p class="fineprint">A falling line is a tighter proxy. A rising line means the corporate ETF lagged Treasuries. Over a month the drift includes carry. A kink is the spread move.</p>
     <div class="section-label"><span>Bond wire</span><small>the headline opens the article</small></div>
@@ -779,7 +837,7 @@ function sleeveRow(sleeve) {
 
 function excessText(bp) {
   if (!Number.isFinite(bp)) return "—";
-  return signed(bp, 1);
+  return `${signed(bp, 1)} bp`;
 }
 
 function excessTone(bp) {
@@ -813,7 +871,7 @@ function creditStories() {
 
 async function loadCredit() {
   try {
-    const response = await fetch("/api/credit");
+    const response = await fetch("/api/credit", { signal: AbortSignal.timeout(25000) });
     if (!response.ok) throw new Error("The credit book did not answer.");
     state.credit = await response.json();
     state.creditError = "";
@@ -906,8 +964,16 @@ if (state.view === "bonds") loadCredit();
 if (state.view === "chart") loadChart();
 setInterval(() => {
   loadSnapshot(false).catch((error) => {
-    state.error = error.message;
-    renderChrome();
+    state.error = error.name === "TimeoutError" ? "The tape is still opening." : error.message;
+    paint(true);
   });
   if (state.view === "bonds") loadCredit();
 }, 30000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  renderChrome();
+  loadSnapshot(false).catch((error) => {
+    state.error = error.name === "TimeoutError" ? "The tape is still opening." : error.message;
+    paint(true);
+  });
+});
