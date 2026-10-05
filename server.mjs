@@ -945,7 +945,7 @@ function readTape(bySymbol, clock) {
   }
 
   if (bp != null && Math.abs(bp) >= 3) {
-    const bond = tlt == null
+    const bond = clock.equity !== "open" || tlt == null
       ? ""
       : Math.abs(tlt) < 0.45
         ? ` The long-bond ETF is only ${signed(tlt, 2)}%, so this is not a full duration shock in the ETF.`
