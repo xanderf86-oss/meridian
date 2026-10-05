@@ -144,14 +144,14 @@ function tapeHtml() {
 
 function quoteCard(quote) {
   const direction = directionOf(quote);
-  const change = quote.kind === "yield" ? `${signed(quote.bp, 1)} bp` : `${signed(quote.changePct, 2)}%`;
+  const change = hygChangeLabel(quote) || (quote.kind === "yield" ? `${signed(quote.bp, 1)} bp` : `${signed(quote.changePct, 2)}%`);
   const stamp = quote.print === "prior"
     ? `Prior close${quote.asOf ? ` · ${formatEt(quote.asOf)}` : ""}`
     : (quote.asOf ? formatEt(quote.asOf) : "");
   return `
     <button class="quote" type="button" data-symbol="${escapeHtml(quote.symbol)}">
       <div class="q-top"><span class="q-name">${escapeHtml(quote.symbol)}</span><span class="chg ${direction}">${change}</span></div>
-      <div class="q-px">${formatPrice(quote.price, quote.kind, quote.priceHint)}</div>
+      <div class="q-px">${quote.symbol === "HYG" ? "$" : ""}${formatPrice(quote.price, quote.kind, quote.priceHint)}</div>
       <div class="q-sub">${escapeHtml(quote.name)}${stamp ? ` · ${escapeHtml(stamp)}` : ""}</div>
       ${sparkSvg(quote.spark, direction)}
     </button>
@@ -306,11 +306,17 @@ function chartShellHtml() {
 function chartHeadHtml(quote) {
   if (!quote) return `<div class="q-name">${escapeHtml(state.symbol)}</div>`;
   const direction = directionOf(quote);
-  const change = quote.kind === "yield" ? `${signed(quote.bp, 1)} bp` : `${signed(quote.changePct, 2)}%`;
+  const change = hygChangeLabel(quote) || (quote.kind === "yield" ? `${signed(quote.bp, 1)} bp` : `${signed(quote.changePct, 2)}%`);
+  const price = quote.symbol === "HYG" ? `$${formatPrice(quote.price, quote.kind, quote.priceHint)}` : formatPrice(quote.price, quote.kind, quote.priceHint);
   return `
     <div class="q-top"><span class="q-name">${escapeHtml(quote.name)} · ${escapeHtml(quote.exchange || quote.symbol)}</span><span class="chg ${direction}">${change}</span></div>
-    <div class="q-px ${direction}">${formatPrice(quote.price, quote.kind, quote.priceHint)}</div>
+    <div class="q-px ${direction}">${price}</div>
   `;
+}
+
+function hygChangeLabel(quote) {
+  if (quote.symbol !== "HYG" || !Number.isFinite(quote.change)) return "";
+  return dollarText(quote.change);
 }
 
 function chartStoriesHtml() {
@@ -808,7 +814,7 @@ function creditBoardHtml() {
     if (!rows.length) return "";
     return `
       <div class="section-label"><span>${escapeHtml(rows[0].groupLabel)}</span></div>
-      <div class="sleeve-head"><span>Sleeve</span><span>Price</span><span>1 day</span><span>5 day</span></div>
+      <div class="sleeve-head"><span>Sleeve</span><span>Price</span><span>${group === "hy" ? "$ chg" : "1 day"}</span><span>5 day</span></div>
       ${rows.map(sleeveRow).join("")}
     `;
   }).join("");
@@ -821,18 +827,35 @@ function creditBoardHtml() {
 }
 
 function sleeveRow(sleeve) {
-  const day = sleeve.floating ? "float" : excessText(sleeve.excess1);
-  const week = sleeve.floating ? "—" : excessText(sleeve.excess5);
-  const hedge = sleeve.floating ? "Floating rate" : `vs ${sleeve.hedge}`;
-  const action = sleeve.chart ? `data-series="${sleeve.symbol}"` : `data-symbol="${sleeve.symbol}"`;
+  const priceQuote = sleeve.group === "hy";
+  const day = sleeve.floating ? "float" : priceQuote ? dollarText(sleeve.change) : excessText(sleeve.excess1);
+  const week = sleeve.floating ? "—" : priceQuote ? pctText(sleeve.price5) : excessText(sleeve.excess5);
+  const hedge = sleeve.floating ? "Floating rate" : priceQuote ? "price" : `vs ${sleeve.hedge}`;
+  const action = !priceQuote && sleeve.chart ? `data-series="${sleeve.symbol}"` : `data-symbol="${sleeve.symbol}"`;
+  const dayTone = priceQuote ? directionFromPct(sleeve.change) : excessTone(sleeve.excess1);
+  const weekTone = sleeve.floating ? "flat" : priceQuote ? directionFromPct(sleeve.price5) : excessTone(sleeve.excess5);
   return `
     <button class="sleeve ${state.creditSeries === sleeve.symbol ? "on" : ""}" type="button" ${action}>
       <span><b>${escapeHtml(sleeve.name)}</b><small>${escapeHtml(sleeve.symbol)} · ${escapeHtml(hedge)}</small></span>
-      <span class="px">${formatPrice(sleeve.price, "price", 2)}<small class="${directionFromPct(sleeve.changePct)}"> ${signed(sleeve.changePct, 2)}%</small></span>
-      <span class="ex ${excessTone(sleeve.excess1)}">${day}</span>
-      <span class="ex ${sleeve.floating ? "flat" : excessTone(sleeve.excess5)}">${week}</span>
+      <span class="px">${priceQuote ? "$" : ""}${formatPrice(sleeve.price, "price", 2)}<small class="${directionFromPct(sleeve.changePct)}"> ${signed(sleeve.changePct, 2)}%</small></span>
+      <span class="ex ${dayTone}">${day}</span>
+      <span class="ex ${weekTone}">${week}</span>
     </button>
   `;
+}
+
+function pctText(pct) {
+  if (!Number.isFinite(pct)) return "—";
+  return `${signed(pct, 2)}%`;
+}
+
+function dollarText(change) {
+  if (!Number.isFinite(change)) return "—";
+  const rounded = Math.round(change * 100) / 100;
+  const body = Math.abs(rounded).toFixed(2);
+  if (rounded > 0) return `+$${body}`;
+  if (rounded < 0) return `-$${body}`;
+  return `$${body}`;
 }
 
 function excessText(bp) {

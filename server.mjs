@@ -862,6 +862,10 @@ function signed(value, digits) {
 function formatMove(move, quote) {
   const kind = quote?.kind || "price";
   const name = quote?.name || move.symbol;
+  if (quote?.symbol === "HYG" && Number.isFinite(move.toPx)) {
+    const delta = Number.isFinite(move.fromPx) ? move.toPx - move.fromPx : null;
+    return `${hygPriceLine(move.toPx, delta)} ${move.label}`;
+  }
   const path = `${formatPrice(move.fromPx, kind, quote?.priceHint)} → ${formatPrice(move.toPx, kind, quote?.priceHint)}`;
   if (kind === "yield") return `${name} ${signed(move.bp, 1)} bp ${move.label} · ${path}`;
   return `${name} ${signed(move.pct, 2)}% ${move.label} · ${path}`;
@@ -916,7 +920,16 @@ function lookupName(symbol) {
 function quoteSentence(quote) {
   if (!quote || quote.changePct == null) return null;
   if (quote.kind === "yield") return `${quote.name} ${quote.price.toFixed(3)}% (${signed(quote.bp, 1)} bp)`;
+  if (quote.symbol === "HYG" && Number.isFinite(quote.price)) return hygPriceLine(quote.price, quote.change);
   return `${quote.name} ${signed(quote.changePct, 2)}%`;
+}
+
+function hygPriceLine(price, change) {
+  const px = `$${Number(price).toFixed(2)}`;
+  if (!Number.isFinite(change)) return `HYG ${px}`;
+  const verb = change > 0.01 ? "up" : change < -0.01 ? "down" : "little changed";
+  if (verb === "little changed") return `HYG little changed at ${px}`;
+  return `HYG ${verb} $${Math.abs(change).toFixed(2)} at ${px}`;
 }
 
 function readTape(bySymbol, clock) {
@@ -932,7 +945,8 @@ function readTape(bySymbol, clock) {
   const eur = bySymbol.get("EURUSD=X")?.changePct;
   const vix = bySymbol.get("^VIX")?.changePct;
   const btc = bySymbol.get("BTC-USD")?.changePct;
-  const hyg = bySymbol.get("HYG")?.changePct;
+  const hygQuote = bySymbol.get("HYG");
+  const hyg = hygQuote?.changePct;
 
   if (clock.equity === "open") {
     sentences.push("The New York cash session is open. Changes are versus the prior regular close, and futures are the live lead if they disagree with the ETFs.");
@@ -990,10 +1004,8 @@ function readTape(bySymbol, clock) {
     sentences.push(`The dollar index is ${signed(dxy, 2)}%.${euro} A firmer dollar tightens financial conditions even when ${equityWord}.`);
   }
 
-  if (hyg != null && tlt != null && hyg <= -0.3 && tlt <= -0.4) {
-    sentences.push(`High yield is ${signed(hyg, 2)}% alongside weaker Treasuries. Credit is participating in the duration sale, which is a broader tightening of financial conditions.`);
-  } else if (hyg != null && spy != null && spy > 0.2 && hyg <= -0.35) {
-    sentences.push(`High yield is ${signed(hyg, 2)}% while equities are higher. Credit is not confirming the equity bid.`);
+  if (hygQuote && Number.isFinite(hygQuote.price) && hyg != null && Math.abs(hyg) >= 0.3) {
+    sentences.push(`${hygPriceLine(hygQuote.price, hygQuote.change)}.`);
   }
 
   if (btc != null && Math.abs(btc) >= 1 && nq != null) {
