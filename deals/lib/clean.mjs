@@ -16,8 +16,9 @@ export function normalizeText(value) {
     .trim();
 }
 
-export function queryTokens(query) {
-  return normalizeText(query)
+function rawTokens(text) {
+  return text
+    .trim()
     .split(" ")
     .map((token) => token.replace(/^[.+]+|[.+]+$/g, ""))
     .filter((token) => token && token !== "s" && !STOPWORDS.has(token));
@@ -29,9 +30,24 @@ export function queryTokens(query) {
 //  - A word may have its number glued on ("PlayStation5").
 //  - Tokens that mix digits and letters ("1tb", "4070ti") also match when the
 //    title spaces them out.
+// Common short names, so "PlayStation 5" finds "PS5" titles and the reverse.
+const SHORT_NAMES = [["playstation", "ps"]];
+
+function expandShortNames(text) {
+  let out = text;
+  for (const [long, short] of SHORT_NAMES) {
+    out = out.replace(new RegExp(` ${short} ?(\\d+) `, "g"), ` ${long} $1 `);
+  }
+  return out;
+}
+
+export function queryTokens(query) {
+  return rawTokens(expandShortNames(` ${normalizeText(query)} `));
+}
+
 export function matchesQuery(title, tokens) {
   if (!tokens.some((token) => token.length >= 2)) return false;
-  const words = ` ${normalizeText(title)} `;
+  const words = expandShortNames(` ${normalizeText(title)} `);
   const compact = words.replace(/\s+/g, "");
   return tokens.every((token) => {
     if (/^\d+$/.test(token)) return new RegExp(`(^|[^0-9.])${token}(st|nd|rd|th)?(?![a-z0-9.])`).test(words);
@@ -178,6 +194,14 @@ const RETAILER_NAMES = {
   "bjs.com": "BJ's", "rei.com": "REI", "nike.com": "Nike", "sephora.com": "Sephora", "ulta.com": "Ulta",
   "dyson.com": "Dyson", "steampowered.com": "Steam", "playstation.com": "PlayStation", "xbox.com": "Xbox",
 };
+
+// Person-to-person resale sites: listings are from individuals, often used even
+// when labelled new, so they never set the headline "lowest new price".
+const RESALE_SITES = /^(poshmark|mercari|offerup|depop|whatnot|craigslist|facebook marketplace|facebook|vinted|swappa|stockx|ebay - |aliexpress|temu|wish|dhgate)/i;
+
+export function isResaleSite(retailer) {
+  return RESALE_SITES.test(String(retailer || "").trim());
+}
 
 export function retailerFromUrl(raw) {
   try {

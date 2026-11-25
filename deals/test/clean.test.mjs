@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanUrl, detectCondition, isSponsoredText, looksLikeAccessory, matchesQuery, parsePrice, queryTokens } from "../lib/clean.mjs";
+import { isResaleSite, cleanUrl, detectCondition, isSponsoredText, looksLikeAccessory, matchesQuery, parsePrice, queryTokens } from "../lib/clean.mjs";
 
 test("cleanUrl strips tracking and unwraps redirects", () => {
   assert.equal(cleanUrl("https://www.amazon.com/dp/B0D1/ref=sr_1_1?tag=aff-20&th=1&utm_source=x"), "https://www.amazon.com/dp/B0D1?th=1");
@@ -31,6 +31,12 @@ test("query matching and accessories", () => {
   assert.ok(!matchesQuery("PlayStation 4 Slim 500GB", ps5));
   assert.ok(!matchesQuery("PlayStation Pulse headset 5.1 surround", ps5));
   assert.ok(!matchesQuery("LG 65 inch OLED", queryTokens("LG 5")));
+  assert.ok(matchesQuery("Sony PS5 Slim Console Disc Edition", ps5));
+  assert.ok(matchesQuery("PS 5 Pro console", ps5));
+  assert.ok(!matchesQuery("Sony PS4 Slim 1TB", ps5));
+  assert.ok(matchesQuery("Sony PlayStation 5 Console", queryTokens("ps5")));
+  assert.ok(!matchesQuery("Sony PlayStation 4 Console", queryTokens("ps5")));
+  assert.ok(isResaleSite("Poshmark") && isResaleSite("Mercari") && !isResaleSite("Best Buy") && !isResaleSite("eBay"));
   assert.ok(matchesQuery("Xbox Series X 1TB", queryTokens("xbox series x")));
   assert.ok(!matchesQuery("Xbox Series S 512GB", queryTokens("xbox series x")));
   assert.ok(looksLikeAccessory("DualSense Wireless Controller for PlayStation 5", "playstation 5"));

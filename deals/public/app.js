@@ -159,6 +159,7 @@ function renderOffers() {
           best ? `<span class="badge best">Lowest</span>` : "",
           o.condition !== "new" ? `<span class="badge cond">${esc(o.condition)}</span>` : "",
           o.accessory ? `<span class="badge warn">accessory?</span>` : "",
+          o.flags.includes("resale-site") ? `<span class="badge warn">resale site — individual seller</span>` : "",
           o.flags.includes("far-below-typical") ? `<span class="badge warn">far below typical — check seller</span>` : "",
         ].join("");
         return `<li class="offer${best ? " best" : ""}">

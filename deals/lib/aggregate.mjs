@@ -1,5 +1,5 @@
 import {
-  cleanUrl, detectCondition, isAdUrl, isSponsoredText, looksLikeAccessory, matchesQuery, median, queryTokens, round2,
+  cleanUrl, detectCondition, isAdUrl, isResaleSite, isSponsoredText, looksLikeAccessory, matchesQuery, median, queryTokens, round2,
 } from "./clean.mjs";
 import { isConfigured } from "./sources/index.mjs";
 import { asinFromUrl } from "./sources/keepa.mjs";
@@ -53,13 +53,13 @@ export function refineOffers(raw, query) {
       percentOff: originalPrice ? Math.round((1 - item.price / originalPrice) * 100) : null,
       condition: item.condition || detectCondition(item.title),
       accessory: looksLikeAccessory(item.title, query),
-      flags: [],
+      flags: isResaleSite(item.retailer) ? ["resale-site"] : [],
     });
   }
 
   // A "new" price far below what everyone else charges is almost always an
   // accessory, a part, or a scam listing. Flag it rather than call it the best deal.
-  const typical = median(offers.filter((o) => !o.accessory && o.condition === "new").map((o) => o.price));
+  const typical = median(offers.filter((o) => !o.accessory && !o.flags.length && o.condition === "new").map((o) => o.price));
   if (typical) {
     for (const offer of offers) {
       if (!offer.accessory && offer.price < typical * 0.35) offer.flags.push("far-below-typical");

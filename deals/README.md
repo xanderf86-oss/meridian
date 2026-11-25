@@ -80,6 +80,9 @@ every restart or redeploy; the app shows a warning when that's the case.
   Walmart `wmlspartner`, Rakuten/CJ/Impact ids). Known affiliate redirect
   wrappers are unwrapped, so every link goes straight to the listing.
 - Off-topic results: every meaningful word you typed must be in the title.
+- Listings from person-to-person resale sites (Poshmark, Mercari, OfferUp and
+  similar) are flagged, hidden by default, and never set the headline lowest
+  price.
 - Accessories ("case for…", "compatible with…") and suspiciously low "new"
   prices (under 35% of the median) are flagged and hidden by default.
   There's a toggle to show them.

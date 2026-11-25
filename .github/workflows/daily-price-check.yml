@@ -16,5 +16,5 @@ jobs:
     steps:
       - name: Ask Deal Desk to re-check tracked products
         env:
-          DEAL_DESK_URL: ${{ vars.DEAL_DESK_URL || 'https://deal-desk-4y3x.onrender.com' }}
+          DEAL_DESK_URL: ${{ vars.DEAL_DESK_URL || 'https://meridian-jsek.onrender.com' }}
         run: curl -fsS --retry 6 --retry-delay 20 --retry-all-errors --max-time 120 "$DEAL_DESK_URL/api/refresh"
