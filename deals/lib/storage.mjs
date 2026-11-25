@@ -106,12 +106,27 @@ export function githubStorage({ http, token, repo, branch = "deal-desk-data", pa
   };
 }
 
+// Accepts "owner/name" as well as a pasted GitHub URL or clone address.
+export function parseRepo(value) {
+  const cleaned = String(value || "")
+    .trim()
+    .replace(/^(https?:\/\/)?(www\.)?github\.com[/:]/i, "")
+    .replace(/^git@github\.com:/i, "")
+    .replace(/\.git$/i, "")
+    .replace(/^\/+|\/+$/g, "");
+  return /^[\w.-]+\/[\w.-]+$/.test(cleaned) ? cleaned : null;
+}
+
 export function storageFromEnv(env, http, defaultDir) {
-  if (env.HISTORY_GITHUB_TOKEN && /^[\w.-]+\/[\w.-]+$/.test(env.HISTORY_GITHUB_REPO || "")) {
+  const token = String(env.HISTORY_GITHUB_TOKEN || "").trim();
+  const repo = parseRepo(env.HISTORY_GITHUB_REPO);
+  if (token && !repo) console.warn("HISTORY_GITHUB_TOKEN is set but HISTORY_GITHUB_REPO is missing or not in owner/name form; using file storage.");
+  if (!token && repo) console.warn("HISTORY_GITHUB_REPO is set but HISTORY_GITHUB_TOKEN is missing; using file storage.");
+  if (token && repo) {
     return githubStorage({
       http,
-      token: env.HISTORY_GITHUB_TOKEN,
-      repo: env.HISTORY_GITHUB_REPO,
+      token,
+      repo,
       branch: env.HISTORY_GITHUB_BRANCH || "deal-desk-data",
     });
   }

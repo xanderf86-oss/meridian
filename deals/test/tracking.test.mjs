@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createApp } from "../server.mjs";
 import { createHistoryStore } from "../lib/history.mjs";
 import { makeHttp } from "../lib/http.mjs";
-import { githubStorage } from "../lib/storage.mjs";
+import { githubStorage, parseRepo, storageFromEnv } from "../lib/storage.mjs";
 import * as F from "./fixtures.mjs";
 
 const DAY = 86400_000;
@@ -143,4 +143,15 @@ test("watch API and daily refresh endpoint", async () => {
   } finally {
     server.close();
   }
+});
+
+test("repo setting accepts owner/name, URLs and clone addresses", () => {
+  for (const value of ["me/repo", " me/repo ", "https://github.com/me/repo.git", "https://github.com/me/repo/", "github.com/me/repo", "git@github.com:me/repo.git"]) {
+    assert.equal(parseRepo(value), "me/repo", value);
+  }
+  assert.equal(parseRepo("repo"), null);
+  assert.equal(parseRepo(""), null);
+  const http = makeHttp(async () => new Response("{}"));
+  assert.match(storageFromEnv({ HISTORY_GITHUB_TOKEN: " tok ", HISTORY_GITHUB_REPO: "https://github.com/me/repo.git" }, http, "/tmp/x").name, /^github me\/repo@deal-desk-data$/);
+  assert.match(storageFromEnv({ HISTORY_GITHUB_REPO: "me/repo" }, http, "/tmp/x").name, /^file /);
 });
