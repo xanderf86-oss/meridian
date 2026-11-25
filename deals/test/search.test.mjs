@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createApp } from "../server.mjs";
+import { createHistoryStore } from "../lib/history.mjs";
 import * as F from "./fixtures.mjs";
 
 const ENV = { BESTBUY_API_KEY: "k", EBAY_CLIENT_ID: "id", EBAY_CLIENT_SECRET: "s", SERPAPI_KEY: "k", YOUTUBE_API_KEY: "k" };
@@ -24,7 +25,7 @@ function mockFetch(calls) {
 }
 
 async function withServer(options, fn) {
-  const server = createApp(options).listen(0);
+  const server = createApp({ history: createHistoryStore(), ...options }).listen(0);
   await once(server, "listening");
   try {
     await fn(`http://127.0.0.1:${server.address().port}`);

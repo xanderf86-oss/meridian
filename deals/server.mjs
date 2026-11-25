@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSearch } from "./lib/aggregate.mjs";
+import { createHistoryStore } from "./lib/history.mjs";
+import { analyzeHistory, generalGuidance } from "./lib/insights.mjs";
+import { keepaHistory } from "./lib/sources/keepa.mjs";
 import { makeHttp } from "./lib/http.mjs";
 import { SOURCES, isConfigured } from "./lib/sources/index.mjs";
 
@@ -24,9 +27,18 @@ const SECURITY_HEADERS = {
     "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'",
 };
 
-export function createApp({ env = process.env, fetchImpl = globalThis.fetch, sources = SOURCES } = {}) {
+const KEEPA_CACHE_MS = 6 * 60 * 60 * 1000;
+
+export function createApp({
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  sources = SOURCES,
+  history = createHistoryStore({ dir: env.DATA_DIR || join(fileURLToPath(new URL(".", import.meta.url)), "data") }),
+  now = () => Date.now(),
+} = {}) {
   const http = makeHttp(fetchImpl);
   const cache = new Map();
+  const keepaCache = new Map();
   const flights = new Map();
   const hits = new Map();
 
@@ -62,6 +74,7 @@ export function createApp({ env = process.env, fetchImpl = globalThis.fetch, sou
         runSearch(query, { sources, env, http })
           .then((data) => {
             cache.set(key, { at: Date.now(), data });
+            history.record(query, data).catch((error) => console.warn("history record failed:", error.message));
             if (cache.size > 500) cache.delete(cache.keys().next().value);
             return data;
           })
@@ -71,7 +84,56 @@ export function createApp({ env = process.env, fetchImpl = globalThis.fetch, sou
     return flights.get(key);
   }
 
-  return createServer(async (request, response) => {
+  async function amazonHistory(asin) {
+    if (!env.KEEPA_API_KEY) return { state: "not-configured", requires: ["KEEPA_API_KEY"], signup: "https://keepa.com/#!api" };
+    if (!asin) return { state: "no-match" };
+    const cached = keepaCache.get(asin);
+    if (cached && Date.now() - cached.at < KEEPA_CACHE_MS) return cached.data;
+    try {
+      const found = await keepaHistory(asin, { http, env, now: now() });
+      const data = found ? { state: "ok", ...found, insight: analyzeHistory(found.points, { now: now() }) } : { state: "no-match" };
+      keepaCache.set(asin, { at: Date.now(), data });
+      if (keepaCache.size > 500) keepaCache.delete(keepaCache.keys().next().value);
+      return data;
+    } catch (error) {
+      console.warn("keepa failed:", error.message);
+      return { state: "error", error: String(error.message).slice(0, 120) };
+    }
+  }
+
+  async function priceHistory(query, asin) {
+    const [tracked, amazon] = await Promise.all([history.series(query), amazonHistory(asin)]);
+    return {
+      query,
+      tracked: {
+        series: "Lowest new price across connected stores",
+        since: tracked.since,
+        points: tracked.points,
+        insight: analyzeHistory(tracked.points, { now: now() }),
+      },
+      amazon,
+      guidance: generalGuidance(query),
+    };
+  }
+
+  // Optionally re-check recently searched products so the tracker keeps a daily
+  // price even on days nobody searches. Each refresh spends API calls.
+  function startRefresher(hours) {
+    if (!(hours > 0)) return null;
+    const timer = setInterval(async () => {
+      const queries = (await history.recentQueries(14 * 86400_000)).slice(0, Number(env.TRACK_REFRESH_LIMIT || 50));
+      for (const query of queries) {
+        await runSearch(query, { sources, env, http })
+          .then((data) => history.record(query, data))
+          .catch((error) => console.warn("refresh failed:", query, error.message));
+      }
+      console.log(`refreshed ${queries.length} tracked products`);
+    }, hours * 3600_000);
+    timer.unref();
+    return timer;
+  }
+
+  const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", "http://localhost");
       if (url.pathname === "/api/health") return send(response, 200, { ok: true });
@@ -88,6 +150,13 @@ export function createApp({ env = process.env, fetchImpl = globalThis.fetch, sou
         if (limited(request)) return send(response, 429, { error: "Too many searches — wait a minute and try again." });
         return send(response, 200, await search(query));
       }
+      if (url.pathname === "/api/history") {
+        const query = String(url.searchParams.get("q") || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 100);
+        if (query.length < 2) return send(response, 400, { error: "Type at least two characters." });
+        const asin = /^[A-Z0-9]{10}$/.test(url.searchParams.get("asin") || "") ? url.searchParams.get("asin") : null;
+        if (limited(request)) return send(response, 429, { error: "Too many requests — wait a minute and try again." });
+        return send(response, 200, await priceHistory(query, asin));
+      }
       if (request.method !== "GET" && request.method !== "HEAD") return send(response, 405, { error: "Method not allowed." });
       const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
       const filePath = normalize(join(ROOT, pathname));
@@ -103,11 +172,15 @@ export function createApp({ env = process.env, fetchImpl = globalThis.fetch, sou
       if (!response.headersSent) send(response, 500, { error: "Search failed. Try again." });
     }
   });
+  server.startRefresher = startRefresher;
+  return server;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
   const port = Number(process.env.PORT || 8788);
-  createApp().listen(port, "0.0.0.0", () => {
+  const app = createApp();
+  app.startRefresher(Number(process.env.TRACK_REFRESH_HOURS || 0));
+  app.listen(port, "0.0.0.0", () => {
     const on = SOURCES.filter((s) => isConfigured(s, process.env)).map((s) => s.id);
     console.log(`Deals listening on ${port}; sources: ${on.join(", ")}`);
   });

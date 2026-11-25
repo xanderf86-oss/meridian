@@ -2,6 +2,7 @@ import {
   cleanUrl, detectCondition, isAdUrl, isSponsoredText, looksLikeAccessory, matchesQuery, median, queryTokens, round2,
 } from "./clean.mjs";
 import { isConfigured } from "./sources/index.mjs";
+import { asinFromUrl } from "./sources/keepa.mjs";
 
 const SOURCE_TIMEOUT_MS = 16_000;
 
@@ -76,7 +77,9 @@ export function summarize(offers) {
   for (const offer of newOnes) if (!byRetailer.has(offer.retailer)) byRetailer.set(offer.retailer, offer);
   const rated = core.filter((o) => o.rating && o.reviewCount > 0);
   const reviewTotal = rated.reduce((sum, o) => sum + o.reviewCount, 0);
+  const amazon = newOnes.find((o) => asinFromUrl(o.url));
   return {
+    amazonAsin: amazon ? asinFromUrl(amazon.url) : null,
     lowestNew: lowest && { price: lowest.price, retailer: lowest.retailer, url: lowest.url, title: lowest.title },
     lowestUsed: core.find((o) => o.condition !== "new") || null,
     typicalPrice: median(newOnes.map((o) => o.price)),
