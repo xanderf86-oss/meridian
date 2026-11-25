@@ -21,7 +21,19 @@ test("parsePrice", () => {
 
 test("query matching and accessories", () => {
   const tokens = queryTokens("Black Friday AirPods Pro 2 deal");
-  assert.deepEqual(tokens, ["airpods", "pro"]);
+  assert.deepEqual(tokens, ["airpods", "pro", "2"]);
+  assert.ok(!matchesQuery("Apple AirPods Pro 3", tokens));
+  assert.ok(!matchesQuery("Apple AirPods Pro (3rd generation)", tokens));
+  const ps5 = queryTokens("PlayStation 5");
+  assert.ok(matchesQuery("Sony PlayStation 5 Slim Console - 1TB", ps5));
+  assert.ok(matchesQuery("Sony PlayStation5 Digital Edition", ps5));
+  assert.ok(!matchesQuery("Sony PlayStation 4 Pro 1TB Console", ps5));
+  assert.ok(!matchesQuery("PlayStation 4 Slim 500GB", ps5));
+  assert.ok(!matchesQuery("PlayStation Pulse headset 5.1 surround", ps5));
+  assert.ok(!matchesQuery("LG 65 inch OLED", queryTokens("LG 5")));
+  assert.ok(matchesQuery("Xbox Series X 1TB", queryTokens("xbox series x")));
+  assert.ok(!matchesQuery("Xbox Series S 512GB", queryTokens("xbox series x")));
+  assert.ok(looksLikeAccessory("DualSense Wireless Controller for PlayStation 5", "playstation 5"));
   assert.ok(matchesQuery("Apple AirPods Pro (2nd gen)", tokens));
   assert.ok(!matchesQuery("Apple AirPods Max", tokens));
   assert.ok(matchesQuery("Samsung 990 PRO 2 TB SSD", queryTokens("990 pro 2tb")));

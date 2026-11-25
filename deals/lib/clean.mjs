@@ -20,16 +20,26 @@ export function queryTokens(query) {
   return normalizeText(query)
     .split(" ")
     .map((token) => token.replace(/^[.+]+|[.+]+$/g, ""))
-    .filter((token) => token.length >= 2 && !STOPWORDS.has(token));
+    .filter((token) => token && token !== "s" && !STOPWORDS.has(token));
 }
 
-// Every meaningful query word must appear in the title. Tokens that mix digits
-// and letters ("1tb", "4070ti") also match when the title spaces them out.
+// Every meaningful query word must appear in the title.
+//  - Numbers are model/generation numbers and must match exactly: "5" matches
+//    "PlayStation 5", "PS5" and "5th gen", but not "PlayStation 4", "65" or "5.1".
+//  - A word may have its number glued on ("PlayStation5").
+//  - Tokens that mix digits and letters ("1tb", "4070ti") also match when the
+//    title spaces them out.
 export function matchesQuery(title, tokens) {
-  if (!tokens.length) return false;
+  if (!tokens.some((token) => token.length >= 2)) return false;
   const words = ` ${normalizeText(title)} `;
   const compact = words.replace(/\s+/g, "");
-  return tokens.every((token) => words.includes(` ${token} `) || (/\d/.test(token) && compact.includes(token)));
+  return tokens.every((token) => {
+    if (/^\d+$/.test(token)) return new RegExp(`(^|[^0-9.])${token}(st|nd|rd|th)?(?![a-z0-9.])`).test(words);
+    if (words.includes(` ${token} `)) return true;
+    if (/\d/.test(token)) return compact.includes(token);
+    // "playstation" also matches the glued form "PlayStation5".
+    return new RegExp(` ${token.replace(/[.+]/g, "\\$&")}\\d+ `).test(words);
+  });
 }
 
 const ACCESSORY_WORDS = [
@@ -37,7 +47,8 @@ const ACCESSORY_WORDS = [
   "tempered glass", "charger", "charging cable", "cable", "strap", "band", "bands",
   "mount", "holder", "stand", "replacement", "compatible", "ear tips", "eartips",
   "sticker", "decal", "sleeve", "pouch", "adapter", "dock", "keychain", "lanyard",
-  "film", "shell", "bumper", "remote only", "parts",
+  "film", "shell", "bumper", "remote only", "parts", "controller", "controllers",
+  "headset", "faceplate", "plates", "game", "games", "gift card", "manual", "box only", "empty box",
 ];
 
 // A listing is an accessory when it says "for <product>" / "compatible with" or
