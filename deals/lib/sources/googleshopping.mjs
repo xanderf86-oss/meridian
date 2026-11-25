@@ -21,9 +21,10 @@ export const googleShopping = {
     const params = new URLSearchParams({
       engine: "google_shopping",
       q: query,
+      google_domain: "google.com",
+      location: env.SERPAPI_LOCATION || "United States",
       gl: "us",
       hl: "en",
-      num: "60",
       api_key: env.SERPAPI_KEY,
     });
     return googleShopping.parse(await http.json(`https://serpapi.com/search.json?${params}`, { timeoutMs: 15000 }));

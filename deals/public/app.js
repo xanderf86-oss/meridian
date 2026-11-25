@@ -205,7 +205,7 @@ function renderOffers() {
   $("offer-count").innerHTML = `· ${list.length} shown${hidden > 0 ? ` · ${hidden} hidden by filters (${parts.join(", ")}) · <button type="button" class="linkish" id="show-all">show all</button>` : ""}`;
   $("offers").innerHTML = list.length
     ? list.slice(0, 150).map((o) => offerCard(o, o.price === cheapest)).join("")
-    : `<li class="empty-note">${data.offers.length ? "Nothing matches these filters — try including used/refurbished or accessories." : "No store listings. Connect more sources (see the list at the bottom)."}</li>`;
+    : `<li class="empty-note">${data.offers.length ? "Nothing matches these filters — try including used/refurbished or accessories." : (data.removed.offTopic ? `The stores returned ${data.removed.offTopic} results, but none were this product. See below for what came back.` : "No store listings. Connect more sources (see the list at the bottom).")}</li>`;
 }
 
 $("offer-count").addEventListener("click", (event) => {
