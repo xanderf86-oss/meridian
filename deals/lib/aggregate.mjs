@@ -133,7 +133,7 @@ export async function runSearch(query, { sources, env, http }) {
       console.warn(`source ${source.id} failed:`, result.reason?.message || result.reason);
       return { id: source.id, label: source.label, kind: source.kind, state: "error", error: String(result.reason?.message || "failed").slice(0, 120) };
     }
-    return { id: source.id, label: source.label, kind: source.kind, state: "ok", count: result.value.length };
+    return { id: source.id, label: source.label, kind: source.kind, state: "ok", count: result.value.length, debug: result.value.debug || undefined };
   });
   const kept = (id, offers) => offers.filter((o) => o.source === id).length;
 

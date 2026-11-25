@@ -121,6 +121,17 @@ function render() {
     `<li><span class="badge">${esc(REASONS[d.reason] || d.reason)}</span> ${esc(d.title || "(no title)")}
       <span class="small">${d.price ? `${money.format(d.price)} · ` : ""}${esc(d.retailer || d.source)}</span></li>`).join("");
 
+  const debug = data.sources.find((src) => src.debug)?.debug;
+  $("tech").hidden = !debug;
+  if (debug) {
+    $("tech-list").innerHTML = [
+      `<li>Search text Google Shopping received: <strong>${esc(debug.asked ?? "unknown")}</strong>${debug.state ? ` · ${esc(debug.state)}` : ""}${debug.error ? ` · error: ${esc(debug.error)}` : ""}</li>`,
+      ...debug.sections.map((sec) => `<li><strong>${esc(sec.key)}</strong>${sec.count != null ? ` · ${sec.count} item${sec.count === 1 ? "" : "s"}` : ""}${sec.nested != null ? ` (${sec.nested} products inside)` : ""}
+        ${sec.sample ? `<br>first: ${esc(sec.sample)}${sec.price != null ? ` · ${esc(sec.price)}` : ""}${sec.store ? ` · ${esc(sec.store)}` : ""}` : ""}
+        <br><span class="small">${esc(sec.fields.join(", "))}</span></li>`),
+    ].join("");
+  }
+
   $("stores").innerHTML = summary.bestPerRetailer.length
     ? summary.bestPerRetailer.map((r) => `<tr><td>${link(r.url, esc(r.retailer))}</td><td class="p">${money.format(r.price)}</td></tr>`).join("")
     : `<tr><td class="empty-note">No new-condition listings from connected stores.</td></tr>`;

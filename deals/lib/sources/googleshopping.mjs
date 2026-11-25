@@ -11,6 +11,36 @@ function storeName(source) {
   return asDomain.replace(/\.(com|net|org|us)$/i, "");
 }
 
+// A compact outline of the response (section names, sizes, a sample title), shown
+// on the page for troubleshooting. Contains no keys or personal data.
+export function describeResponse(data) {
+  const sections = [];
+  for (const [key, value] of Object.entries(data || {})) {
+    if (Array.isArray(value)) {
+      const first = value[0] || {};
+      const nested = Array.isArray(first.shopping_results) ? first.shopping_results : null;
+      const sample = (nested ? nested[0] : first) || {};
+      sections.push({
+        key,
+        count: value.length,
+        nested: nested ? value.reduce((sum, group) => sum + (group.shopping_results?.length || 0), 0) : null,
+        fields: Object.keys(sample).slice(0, 14),
+        sample: String(sample.title || first.title || "").slice(0, 70),
+        price: sample.extracted_price ?? sample.price ?? null,
+        store: sample.source || sample.seller || null,
+      });
+    } else if (value && typeof value === "object" && !["search_metadata", "search_parameters", "pagination", "serpapi_pagination"].includes(key)) {
+      sections.push({ key, count: null, fields: Object.keys(value).slice(0, 14), sample: String(value.title || "").slice(0, 70) });
+    }
+  }
+  return {
+    asked: data?.search_parameters?.q ?? null,
+    state: data?.search_information?.shopping_results_state ?? data?.search_information?.query_displayed ?? null,
+    error: data?.error ?? null,
+    sections,
+  };
+}
+
 export const googleShopping = {
   id: "google_shopping",
   label: "Google Shopping (all stores)",
@@ -27,7 +57,10 @@ export const googleShopping = {
       hl: "en",
       api_key: env.SERPAPI_KEY,
     });
-    return googleShopping.parse(await http.json(`https://serpapi.com/search.json?${params}`, { timeoutMs: 15000 }));
+    const data = await http.json(`https://serpapi.com/search.json?${params}`, { timeoutMs: 15000 });
+    const items = googleShopping.parse(data);
+    items.debug = describeResponse(data);
+    return items;
   },
   parse(data) {
     // Organic results can also arrive grouped ("categorized") by Google. Paid
