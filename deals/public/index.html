@@ -28,6 +28,11 @@
     </form>
     <div class="chips" id="suggestions" aria-label="Popular searches"></div>
 
+    <section id="watchlist" class="watchlist" aria-labelledby="h-watch" hidden>
+      <h2 id="h-watch">Tracked products <span class="muted" id="watch-note"></span></h2>
+      <ul id="watch-items" class="watch-items"></ul>
+    </section>
+
     <section id="status" class="status" hidden></section>
 
     <section id="results" hidden>
@@ -52,6 +57,7 @@
               <h2 id="h-history">Price history &amp; best time to buy</h2>
               <div class="seg" id="h-series" role="tablist" aria-label="Price history source"></div>
             </div>
+            <div class="track" id="h-track"></div>
             <div id="h-body"></div>
           </section>
           <h2 id="h-offers">Listings <span class="muted" id="offer-count"></span></h2>

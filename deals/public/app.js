@@ -203,6 +203,7 @@ async function loadHistory(query, asin) {
   const panel = $("history");
   panel.hidden = false;
   $("h-series").innerHTML = "";
+  $("h-track").innerHTML = "";
   $("h-body").innerHTML = `<p class="empty-note"><span class="spinner"></span>Loading price history…</p>`;
   try {
     const params = new URLSearchParams({ q: query });
@@ -212,6 +213,7 @@ async function loadHistory(query, asin) {
     if (token !== histToken) return;
     if (!response.ok) throw new Error(body.error || "Could not load price history.");
     hist = body;
+    renderTrack();
     histSeries = body.amazon?.state === "ok" && body.amazon.points.length ? "amazon" : "tracked";
     renderHistory();
   } catch (error) {
@@ -430,3 +432,82 @@ window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => { if (hist) { drawChart(); drawSeason(currentSeries().insight.seasonality); } }, 150);
 });
+
+/* ---------- Watchlist: track a product daily ---------- */
+function renderTrack(message = "") {
+  if (!hist) return;
+  const w = hist.watch;
+  const t = hist.tracker || {};
+  const warn = !t.healthy
+    ? "Saved price history can't be reached right now, so new prices aren't being recorded."
+    : !t.durable
+      ? "Price history is kept on this server only and is lost when it restarts. Connect GitHub storage to keep it (see README)."
+      : "";
+  $("h-track").innerHTML = `
+    <button type="button" class="btn-ghost" id="track-btn" aria-pressed="${w ? "true" : "false"}">${w ? "✓ Tracking — stop" : "＋ Track this product daily"}</button>
+    <span class="small">${w
+      ? `Tracking since ${dateFmt.format(w.since)}${w.startPrice ? ` at ${money.format(w.startPrice)}` : ""}. Price is checked once a day.`
+      : `Checks the price every day and builds its history. ${t.watched ?? 0} of ${t.watchLimit ?? 10} slots used.`}</span>
+    ${message ? `<div class="small warn-text">${esc(message)}</div>` : ""}
+    ${warn ? `<div class="small warn-text">${esc(warn)}</div>` : ""}`;
+}
+
+$("h-track").addEventListener("click", async (event) => {
+  if (event.target.id !== "track-btn" || !hist) return;
+  event.target.disabled = true;
+  try {
+    const response = await fetch("/api/watch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ q: hist.query, on: !hist.watch }),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "Could not update tracking.");
+    hist.watch = body.watch;
+    hist.tracker = body.tracker;
+    renderTrack();
+    loadWatchlist();
+  } catch (error) {
+    renderTrack(error.message);
+  }
+});
+
+function sparkline(points) {
+  if (points.length < 2) return "";
+  const W = 96, H = 28, pad = 4;
+  const lo = Math.min(...points.map((p) => p.price));
+  const hi = Math.max(...points.map((p) => p.price));
+  const x = (i) => pad + (i / (points.length - 1)) * (W - pad * 2);
+  const y = (v) => (hi === lo ? H / 2 : pad + (1 - (v - lo) / (hi - lo)) * (H - pad * 2));
+  const d = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.price).toFixed(1)}`).join("");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${d}"/><circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(points.at(-1).price).toFixed(1)}" r="3"/></svg>`;
+}
+
+async function loadWatchlist() {
+  try {
+    const { items } = await (await fetch("/api/watchlist")).json();
+    $("watchlist").hidden = !items.length;
+    $("watch-note").textContent = items.length ? "· checked daily" : "";
+    $("watch-items").innerHTML = items.map((item) => {
+      const c = item.changePercent;
+      const change = c == null || !item.price ? "" : c === 0
+        ? `<span class="chg flat">no change</span>`
+        : `<span class="chg ${c < 0 ? "down" : "up"}">${c < 0 ? "▼" : "▲"} ${Math.abs(c)}% since tracking</span>`;
+      return `<li><button type="button" class="watch-card" data-q="${esc(item.query)}">
+        <span class="w-title">${esc(item.query)}</span>
+        <span class="w-row"><span class="w-price">${item.price ? money.format(item.price) : "—"}</span>${sparkline(item.spark)}</span>
+        <span class="small">${change}${item.retailer ? ` · ${esc(item.retailer)}` : ""}${item.low && item.price > item.low ? ` · low ${money.format(item.low)}` : ""}</span>
+      </button></li>`;
+    }).join("");
+  } catch {
+    $("watchlist").hidden = true;
+  }
+}
+$("watch-items").addEventListener("click", (event) => {
+  const q = event.target.closest("[data-q]")?.dataset.q;
+  if (!q) return;
+  $("q").value = q;
+  search(q);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+loadWatchlist();

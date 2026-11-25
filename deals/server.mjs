@@ -4,6 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSearch } from "./lib/aggregate.mjs";
 import { createHistoryStore } from "./lib/history.mjs";
+import { storageFromEnv } from "./lib/storage.mjs";
 import { analyzeHistory, generalGuidance } from "./lib/insights.mjs";
 import { keepaHistory } from "./lib/sources/keepa.mjs";
 import { makeHttp } from "./lib/http.mjs";
@@ -28,15 +29,22 @@ const SECURITY_HEADERS = {
 };
 
 const KEEPA_CACHE_MS = 6 * 60 * 60 * 1000;
+const REFRESH_EVERY_MS = 20 * 60 * 60 * 1000;
 
 export function createApp({
   env = process.env,
   fetchImpl = globalThis.fetch,
   sources = SOURCES,
-  history = createHistoryStore({ dir: env.DATA_DIR || join(fileURLToPath(new URL(".", import.meta.url)), "data") }),
+  history: historyOption = null,
   now = () => Date.now(),
 } = {}) {
   const http = makeHttp(fetchImpl);
+  const history =
+    historyOption ||
+    createHistoryStore({
+      storage: storageFromEnv(env, http, join(fileURLToPath(new URL(".", import.meta.url)), "data")),
+      watchLimit: Number(env.WATCH_LIMIT || 10),
+    });
   const cache = new Map();
   const keepaCache = new Map();
   const flights = new Map();
@@ -105,6 +113,8 @@ export function createApp({
     const [tracked, amazon] = await Promise.all([history.series(query), amazonHistory(asin)]);
     return {
       query,
+      watch: tracked.watch,
+      tracker: await history.status(),
       tracked: {
         series: "Lowest new price across connected stores",
         since: tracked.since,
@@ -116,21 +126,44 @@ export function createApp({
     };
   }
 
-  // Optionally re-check recently searched products so the tracker keeps a daily
-  // price even on days nobody searches. Each refresh spends API calls.
-  function startRefresher(hours) {
-    if (!(hours > 0)) return null;
-    const timer = setInterval(async () => {
-      const queries = (await history.recentQueries(14 * 86400_000)).slice(0, Number(env.TRACK_REFRESH_LIMIT || 50));
+  // Re-check every watched product at most once a day so its history has no
+  // gaps. Triggered by any visit and by GET /api/refresh (for a daily ping).
+  let refreshing = null;
+  async function refreshWatched() {
+    if (refreshing) return { started: 0, running: true };
+    const queries = await history.claimRefresh(REFRESH_EVERY_MS);
+    if (!queries) return { started: 0 };
+    refreshing = (async () => {
       for (const query of queries) {
         await runSearch(query, { sources, env, http })
           .then((data) => history.record(query, data))
           .catch((error) => console.warn("refresh failed:", query, error.message));
       }
-      console.log(`refreshed ${queries.length} tracked products`);
-    }, hours * 3600_000);
-    timer.unref();
-    return timer;
+      await history.flush();
+      console.log(`refreshed ${queries.length} watched products`);
+    })().finally(() => {
+      refreshing = null;
+    });
+    return { started: queries.length };
+  }
+  const refreshInBackground = () => refreshWatched().catch((error) => console.warn("refresh failed:", error.message));
+
+  function readJson(request) {
+    return new Promise((resolve, reject) => {
+      let body = "";
+      request.on("data", (chunk) => {
+        body += chunk;
+        if (body.length > 2000) reject(Object.assign(new Error("too large"), { code: "EBODY" }));
+      });
+      request.on("end", () => {
+        try {
+          resolve(JSON.parse(body || "{}"));
+        } catch {
+          reject(Object.assign(new Error("bad json"), { code: "EBODY" }));
+        }
+      });
+      request.on("error", reject);
+    });
   }
 
   const server = createServer(async (request, response) => {
@@ -148,6 +181,7 @@ export function createApp({
         const query = String(url.searchParams.get("q") || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 100);
         if (query.length < 2) return send(response, 400, { error: "Type at least two characters." });
         if (limited(request)) return send(response, 429, { error: "Too many searches — wait a minute and try again." });
+        refreshInBackground();
         return send(response, 200, await search(query));
       }
       if (url.pathname === "/api/history") {
@@ -157,6 +191,22 @@ export function createApp({
         if (limited(request)) return send(response, 429, { error: "Too many requests — wait a minute and try again." });
         return send(response, 200, await priceHistory(query, asin));
       }
+      if (url.pathname === "/api/watchlist") {
+        refreshInBackground();
+        return send(response, 200, { items: await history.watchlist(), tracker: await history.status() });
+      }
+      if (url.pathname === "/api/watch") {
+        if (request.method !== "POST") return send(response, 405, { error: "Method not allowed." });
+        if (limited(request)) return send(response, 429, { error: "Too many requests — wait a minute and try again." });
+        const body = await readJson(request);
+        const query = String(body.q || "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 100);
+        const result = await history.setWatch(query, body.on !== false);
+        if (!result.ok) return send(response, 409, { error: result.reason });
+        return send(response, 200, { watch: result.watch, tracker: await history.status() });
+      }
+      if (url.pathname === "/api/refresh") {
+        return send(response, 202, await refreshWatched());
+      }
       if (request.method !== "GET" && request.method !== "HEAD") return send(response, 405, { error: "Method not allowed." });
       const pathname = url.pathname === "/" ? "/index.html" : url.pathname;
       const filePath = normalize(join(ROOT, pathname));
@@ -164,6 +214,10 @@ export function createApp({
       const file = await readFile(filePath);
       return send(response, 200, file, TYPES[extname(filePath)] || "application/octet-stream");
     } catch (error) {
+      if (error?.code === "EBODY") {
+        if (!response.headersSent) send(response, 400, { error: "Bad request." });
+        return;
+      }
       if (error?.code === "ENOENT" || error?.code === "EISDIR") {
         if (!response.headersSent) send(response, 404, { error: "Not found." });
         return;
@@ -172,16 +226,21 @@ export function createApp({
       if (!response.headersSent) send(response, 500, { error: "Search failed. Try again." });
     }
   });
-  server.startRefresher = startRefresher;
+  server.history = history;
   return server;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === normalize(process.argv[1])) {
   const port = Number(process.env.PORT || 8788);
   const app = createApp();
-  app.startRefresher(Number(process.env.TRACK_REFRESH_HOURS || 0));
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.once(signal, () => {
+      // Save any unsaved price history before the host stops the process.
+      Promise.race([app.history.flush(), new Promise((r) => setTimeout(r, 8000))]).finally(() => process.exit(0));
+    });
+  }
   app.listen(port, "0.0.0.0", () => {
     const on = SOURCES.filter((s) => isConfigured(s, process.env)).map((s) => s.id);
-    console.log(`Deals listening on ${port}; sources: ${on.join(", ")}`);
+    console.log(`Deals listening on ${port}; sources: ${on.join(", ")}; history: ${app.history.storage.name}`);
   });
 }

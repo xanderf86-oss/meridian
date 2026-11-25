@@ -1,0 +1,20 @@
+# Wakes Deal Desk once a day so it re-checks every tracked product, even on
+# days nobody visits. The app itself refuses to refresh more than once a day.
+name: Daily price check
+
+on:
+  schedule:
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ask Deal Desk to re-check tracked products
+        env:
+          DEAL_DESK_URL: ${{ vars.DEAL_DESK_URL || 'https://deal-desk-4y3x.onrender.com' }}
+        run: curl -fsS --retry 6 --retry-delay 20 --retry-all-errors --max-time 120 "$DEAL_DESK_URL/api/refresh"
