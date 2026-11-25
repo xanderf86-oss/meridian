@@ -1,0 +1,66 @@
+{
+  "notes": 3199,
+  "cloze_deletions": 4749,
+  "parts": {
+    "Part I — Canine": 1005,
+    "Part II — Feline": 550,
+    "Part III — Equine": 440,
+    "Part IV — Bovine": 417,
+    "Part V — Porcine and Small Ruminants": 207,
+    "Part VI — Exotic and Non-Traditional Species": 341,
+    "Part VII — Cross-Species Principles and the Non-Clinical Domains": 239
+  },
+  "chapters": 43,
+  "sections": 401,
+  "apkg": "/workspace/anki/Veterinary_Clinical_Reader.apkg",
+  "samples": [
+    {
+      "text": "Valve auscultation landmarks (PAM) in the dog → {{c1::pulmonic ICS 2–4, aortic ICS 3–5, mitral ICS 5–6 (apex)}} {{c2::right ICS 3–5}}",
+      "extra": "Left side: …; tricuspid at …. A systolic murmur at the right sternal border → tricuspid regurgitation or VSD. <i>Not tricuspid at right 5–6 — it sits at 3–5.</i>",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "Most common congenital heart defect in dogs; most common acquired heart disease? {{c1::patent ductus arteriosus}} {{c2::myxomatous mitral valve disease}}",
+      "extra": "Congenital: … (then subaortic stenosis, pulmonic stenosis). Acquired: … (~75% of canine heart disease); DCM second, in large breeds.",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "Puppy, continuous \"machinery\" murmur loudest at left heart base, bounding water-hammer pulses → {{c1::PDA}} {{c2::left atrium and left ventricle}}",
+      "extra": "Left-to-right …; aorta-to-PA shunt volume-overloads the … (pulmonary overcirculation). Close early by surgical ligation or transcatheter occluder (ACDO); ~65% untreated die within 1 year. Females, Poodles, Maltese, Pomeranians, Shelties; heritable — do not breed.",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "DV radiograph: bulges at aortic arch (1 o'clock), pulmonary trunk (2 o'clock), left auricle (3 o'clock) plus a \"ductus bump\" on the descending aorta → {{c1::PDA radiographic triad with pulmonary overcirculation; ECG tall R waves (&gt;3 mV), wide P mitrale. Confirm by echo: continuous turbulent flow in the pulmonary artery.}}",
+      "extra": "",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "Dog with known PDA whose murmur disappeared; hindlimb weakness, cyanotic caudal membranes with pink oral membranes, polycythemia → {{c1::differential cyanosis}} {{c2::Do not ligate}}",
+      "extra": "Reversed (right-to-left) PDA from pulmonary hypertension — …. … (fatal right heart failure); phlebotomy or hydroxyurea for PCV &gt;65%, sildenafil.",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "Soft grade I–II systolic murmur in a puppy that fades by 4–6 months → {{c1::Innocent (physiologic) murmur; no workup if it disappears. Loud, continuous or persistent murmurs need echocardiography.}}",
+      "extra": "",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 8
+    },
+    {
+      "text": "Young Boxer/Golden/Newfoundland/Rottweiler, systolic ejection murmur at left base (ICS 3–4) radiating to carotids, weak late-rising pulses → Subaortic stenosis {{c1::— the congenital defect most often causing exertional syncope and sudden death (ischemic ventricular arrhythmias); predisposes to endocarditis. Doppler &gt;4.5 m/s = severe; atenolol.}}",
+      "extra": "",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 9
+    },
+    {
+      "text": "Young Bulldog/Boxer/Beagle, systolic murmur at left base (ICS 2–3), right axis deviation/RV hypertrophy, normal femoral pulses → Pulmonic stenosis {{c1::&gt;50–80 mmHg}}",
+      "extra": "; balloon valvuloplasty when gradient … (caution: anomalous coronary artery in Bulldogs). <i>Not weak femoral pulses — those point to subaortic stenosis.</i>",
+      "tags": "Part_I_-_Canine::Ch01_Canine_-_Cardiovascular_and_Respiratory::Auscultation_and_congenital_heart_disease",
+      "page": 9
+    }
+  ]
+}
