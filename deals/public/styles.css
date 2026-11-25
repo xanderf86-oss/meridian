@@ -211,3 +211,4 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .btn-ghost[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .btn-ghost:disabled { opacity: .6; }
 .warn-text { color: var(--warn); flex-basis: 100%; }
+.linkish { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }

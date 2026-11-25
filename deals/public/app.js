@@ -150,7 +150,15 @@ function renderOffers() {
   if (sort === "off") list = [...list].sort((a, b) => (b.percentOff || 0) - (a.percentOff || 0) || a.price - b.price);
   if (sort === "rating") list = [...list].sort((a, b) => (b.rating || 0) * Math.log10(10 + b.reviewCount) - (a.rating || 0) * Math.log10(10 + a.reviewCount));
   const cheapest = Math.min(...list.map((o) => o.price));
-  $("offer-count").textContent = `· ${list.length} shown`;
+  // Say what the filters are hiding, so a short list is never a mystery.
+  const scoped = data.offers.filter((o) => !store || o.retailer === store);
+  const hidden = scoped.length - list.length;
+  const parts = [
+    [hideAcc && scoped.filter((o) => o.accessory).length, "accessories"],
+    [newOnly && scoped.filter((o) => o.condition !== "new").length, "used or refurbished"],
+    [hideFlag && scoped.filter((o) => o.flags.length).length, "risky"],
+  ].filter(([n]) => n).map(([n, label]) => `${n} ${label}`);
+  $("offer-count").innerHTML = `· ${list.length} shown${hidden > 0 ? ` · ${hidden} hidden by filters (${parts.join(", ")}) · <button type="button" class="linkish" id="show-all">show all</button>` : ""}`;
   $("offers").innerHTML = list.length
     ? list.slice(0, 150).map((o) => {
         const best = o.price === cheapest;
@@ -177,6 +185,12 @@ function renderOffers() {
       }).join("")
     : `<li class="empty-note">${data.offers.length ? "Nothing matches these filters — try including used/refurbished or accessories." : "No store listings. Connect more sources (see the list at the bottom)."}</li>`;
 }
+
+$("offer-count").addEventListener("click", (event) => {
+  if (event.target.id !== "show-all") return;
+  ["f-new", "f-acc", "f-flag"].forEach((id) => { $(id).checked = false; });
+  renderOffers();
+});
 
 const initial = new URLSearchParams(location.search).get("q");
 if (initial) {

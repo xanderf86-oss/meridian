@@ -67,13 +67,21 @@ const ACCESSORY_WORDS = [
   "headset", "faceplate", "plates", "game", "games", "gift card", "manual", "box only", "empty box",
 ];
 
-// A listing is an accessory when it says "for <product>" / "compatible with" or
-// uses an accessory noun the shopper did not type themselves.
+const BUNDLE_WORDS = /(^| )(with|w|includes|including|included|plus|bundle|and|\+) /;
+
+// A listing is an accessory when it is made *for* the product ("case for
+// AirPods", "compatible with PS5"), or when it leads with an accessory noun the
+// shopper did not type. An accessory noun after "with"/"includes"/"bundle" is
+// part of a bundle ("Console with DualSense controller"), not an accessory.
 export function looksLikeAccessory(title, query) {
-  const t = ` ${normalizeText(title)} `;
-  const q = ` ${normalizeText(query)} `;
-  if (/\b(compatible with|designed for|works with|fits)\b/.test(t)) return true;
-  return ACCESSORY_WORDS.some((word) => t.includes(` ${word} `) && !q.includes(` ${word} `));
+  const t = expandShortNames(` ${normalizeText(String(title).replace(/[&/]/g, " and "))} `);
+  const q = ` ${queryTokens(query).join(" ")} `;
+  if (/ (compatible with|designed for|works with|fits|made for) /.test(t)) return true;
+  const main = queryTokens(query).find((token) => token.length >= 3);
+  if (main && !q.includes(" for ") && new RegExp(` for (\\S+ ){0,3}${main.replace(/[.+]/g, "\\$&")} `).test(t)) return true;
+  const bundleAt = t.search(BUNDLE_WORDS);
+  const head = bundleAt >= 0 ? t.slice(0, bundleAt + 1) : t;
+  return ACCESSORY_WORDS.some((word) => head.includes(` ${word} `) && !q.includes(` ${word} `));
 }
 
 export function detectCondition(...hints) {

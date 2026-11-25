@@ -40,6 +40,20 @@ test("query matching and accessories", () => {
   assert.ok(matchesQuery("Xbox Series X 1TB", queryTokens("xbox series x")));
   assert.ok(!matchesQuery("Xbox Series S 512GB", queryTokens("xbox series x")));
   assert.ok(looksLikeAccessory("DualSense Wireless Controller for PlayStation 5", "playstation 5"));
+  for (const console of [
+    "Sony PlayStation 5 Slim Console with DualSense Wireless Controller",
+    "PlayStation 5 Console - Disc Edition + Extra Controller",
+    "Sony PS5 Pro Console 2TB & Vertical Stand Bundle",
+    "PlayStation 5 Slim Digital Edition 825GB, includes 2 games",
+    "Sony PlayStation 5 Slim Console",
+  ]) assert.ok(!looksLikeAccessory(console, "playstation 5"), console);
+  for (const accessory of [
+    "Sony DualSense Wireless Controller - PlayStation 5 - Midnight Black",
+    "PS5 Controller Charging Dock",
+    "Vertical Stand for PS5 Slim",
+    "Charging Station for Sony PlayStation 5 Controllers",
+    "Replacement faceplate cover PlayStation 5",
+  ]) assert.ok(looksLikeAccessory(accessory, "playstation 5"), accessory);
   assert.ok(matchesQuery("Apple AirPods Pro (2nd gen)", tokens));
   assert.ok(!matchesQuery("Apple AirPods Max", tokens));
   assert.ok(matchesQuery("Samsung 990 PRO 2 TB SSD", queryTokens("990 pro 2tb")));
