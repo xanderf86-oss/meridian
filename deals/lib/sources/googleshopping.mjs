@@ -29,13 +29,22 @@ export const googleShopping = {
     return googleShopping.parse(await http.json(`https://serpapi.com/search.json?${params}`, { timeoutMs: 15000 }));
   },
   parse(data) {
-    return (data?.shopping_results || [])
-      .filter((item) => !item.sponsored && !item.is_ad && !item.ad)
+    // Organic results can also arrive grouped ("categorized") by Google. Paid
+    // blocks (`ads`, `inline_shopping_results`) are never read.
+    const grouped = (data?.categorized_shopping_results || []).flatMap((group) => group?.shopping_results || []);
+    const seen = new Set();
+    return [...(data?.shopping_results || []), ...grouped]
+      .filter((item) => {
+        const key = item.product_id || item.product_link || item.link || `${item.title}|${item.source}|${item.price}`;
+        return !seen.has(key) && seen.add(key);
+      })
       .map((item) => {
         const direct = [item.link, item.product_link].map(cleanUrl).find((url) => url && !/google\./.test(new URL(url).hostname));
         const url = direct || cleanUrl(item.product_link);
         return {
           source: "google_shopping",
+          // Flagged here, removed (and counted) by the shared filter.
+          sponsored: Boolean(item.sponsored || item.is_ad || item.ad),
           retailer: storeName(item.source) || (url ? retailerFromUrl(url) : "Unknown"),
           title: item.title,
           price: parsePrice(item.extracted_price ?? item.price),

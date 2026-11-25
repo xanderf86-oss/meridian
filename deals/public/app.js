@@ -113,6 +113,14 @@ function render() {
 
   renderOffers();
 
+  const REASONS = { offTopic: "not this product", sponsored: "sponsored/ad", incomplete: "no price or link", duplicate: "duplicate" };
+  const droppedList = data.dropped || [];
+  $("dropped").hidden = !droppedList.length;
+  $("dropped-summary").textContent = `See the ${strippedTotal + removed.incomplete} store results that were removed, and why`;
+  $("dropped-list").innerHTML = droppedList.map((d) =>
+    `<li><span class="badge">${esc(REASONS[d.reason] || d.reason)}</span> ${esc(d.title || "(no title)")}
+      <span class="small">${d.price ? `${money.format(d.price)} · ` : ""}${esc(d.retailer || d.source)}</span></li>`).join("");
+
   $("stores").innerHTML = summary.bestPerRetailer.length
     ? summary.bestPerRetailer.map((r) => `<tr><td>${link(r.url, esc(r.retailer))}</td><td class="p">${money.format(r.price)}</td></tr>`).join("")
     : `<tr><td class="empty-note">No new-condition listings from connected stores.</td></tr>`;
@@ -132,7 +140,7 @@ function render() {
 
   $("sources").innerHTML = data.sources.map((s) => {
     const cls = s.state === "ok" ? "ok" : s.state === "error" ? "error" : "off";
-    const text = s.state === "ok" ? `${s.count}` : s.state === "error" ? "unavailable" : "not connected";
+    const text = s.state === "ok" ? (s.kept != null ? `${s.count} found, ${s.kept} kept` : `${s.count}`) : s.state === "error" ? "unavailable" : "not connected";
     const title = s.state === "not-configured" ? `Set ${s.requires.join(" + ")} to enable` : s.error || "";
     return `<span class="src ${cls}" title="${esc(title)}">${esc(s.label)} · ${esc(text)}</span>`;
   }).join("");

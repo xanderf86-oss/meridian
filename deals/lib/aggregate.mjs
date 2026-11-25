@@ -23,23 +23,31 @@ export function refineOffers(raw, query) {
   const removed = { sponsored: 0, offTopic: 0, incomplete: 0, duplicate: 0 };
   const seen = new Set();
   const offers = [];
+  // A sample of what was dropped and why, so the filtering can be inspected.
+  const dropped = [];
+  const drop = (item, reason) => {
+    removed[reason] += 1;
+    if (dropped.length < 120) {
+      dropped.push({ reason, source: item.source, retailer: item.retailer || null, title: String(item.title || "").slice(0, 140), price: item.price || null });
+    }
+  };
   for (const item of raw) {
     if (item.sponsored || isSponsoredText(item.title, item.note) || isAdUrl(item.url)) {
-      removed.sponsored += 1;
+      drop(item, "sponsored");
       continue;
     }
     const url = cleanUrl(item.url);
     if (!url || !item.title || !item.price) {
-      removed.incomplete += 1;
+      drop(item, "incomplete");
       continue;
     }
     if (!matchesQuery(item.title, tokens)) {
-      removed.offTopic += 1;
+      drop(item, "offTopic");
       continue;
     }
     const key = `${url}|${item.price}`;
     if (seen.has(key)) {
-      removed.duplicate += 1;
+      drop(item, "duplicate");
       continue;
     }
     seen.add(key);
@@ -66,7 +74,7 @@ export function refineOffers(raw, query) {
     }
   }
   offers.sort((a, b) => a.price - b.price);
-  return { offers, removed, typical };
+  return { offers, removed, dropped, typical };
 }
 
 export function summarize(offers) {
@@ -117,6 +125,7 @@ export async function runSearch(query, { sources, env, http }) {
     }
     return { id: source.id, label: source.label, kind: source.kind, state: "ok", count: result.value.length };
   });
+  const kept = (id, offers) => offers.filter((o) => o.source === id).length;
 
   const byKind = { listings: [], community: [], reviews: [] };
   active.forEach((source, index) => {
@@ -127,6 +136,11 @@ export async function runSearch(query, { sources, env, http }) {
   const community = refineOffers(byKind.community, query);
   community.offers.sort((a, b) => (b.postedAt || 0) - (a.postedAt || 0));
   const reviews = refineReviews(byKind.reviews, query);
+  for (const entry of status) {
+    if (entry.state !== "ok") continue;
+    if (entry.kind === "listings") entry.kept = kept(entry.id, listings.offers);
+    if (entry.kind === "community") entry.kept = kept(entry.id, community.offers);
+  }
 
   return {
     query,
@@ -135,12 +149,10 @@ export async function runSearch(query, { sources, env, http }) {
     offers: listings.offers,
     community: community.offers.slice(0, 40),
     reviews,
-    removed: {
-      sponsored: listings.removed.sponsored + community.removed.sponsored,
-      offTopic: listings.removed.offTopic + community.removed.offTopic,
-      duplicate: listings.removed.duplicate + community.removed.duplicate,
-      incomplete: listings.removed.incomplete + community.removed.incomplete,
-    },
+    // Counts are for store listings only; community posts are loosely matched
+    // by their sites and would swamp the numbers.
+    removed: listings.removed,
+    dropped: listings.dropped,
     sources: status,
   };
 }

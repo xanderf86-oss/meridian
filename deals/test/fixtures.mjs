@@ -18,6 +18,12 @@ export const ebayData = {
 export const serpData = {
   ads: [{ title: "Apple AirPods Pro 2 AD", extracted_price: 99, link: "https://www.googleadservices.com/pagead/aclk?x" }],
   inline_shopping_results: [{ title: "Apple AirPods Pro 2 inline", extracted_price: 101, link: "https://amazon.com/x" }],
+  categorized_shopping_results: [
+    { title: "More options", shopping_results: [
+      { title: "Apple AirPods Pro 2 (USB-C)", source: "Costco", extracted_price: 189.99, product_link: "https://www.costco.com/airpods-pro-2.product.100.html", product_id: "c1" },
+      { title: "Apple AirPods Pro 2", source: "Walmart", extracted_price: 168, product_link: "https://www.walmart.com/ip/5689919121?wmlspartner=abc&utm_source=google" },
+    ] },
+  ],
   shopping_results: [
     { title: "Apple AirPods Pro 2 Wireless Earbuds", source: "Amazon.com", extracted_price: 159, extracted_old_price: 249, link: "https://www.google.com/url?url=https://www.amazon.com/dp/B0D1XD1ZV3/ref=sr_1_1?tag=affil-20%26th%3D1", product_link: "https://www.google.com/shopping/product/1", rating: 4.7, reviews: 80000, thumbnail: "https://img/1.jpg" },
     { title: "Apple AirPods Pro 2", source: "Walmart", extracted_price: 168, product_link: "https://www.walmart.com/ip/5689919121?wmlspartner=abc&utm_source=google", rating: 4.6, reviews: 3000 },

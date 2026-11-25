@@ -212,3 +212,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .btn-ghost:disabled { opacity: .6; }
 .warn-text { color: var(--warn); flex-basis: 100%; }
 .linkish { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.dropped { margin-top: 14px; font-size: 13px; color: var(--ink-2); }
+.dropped summary { cursor: pointer; }
+.dropped ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow: auto; }
+.dropped li { overflow-wrap: anywhere; }
