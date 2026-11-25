@@ -32,6 +32,9 @@ test("query matching and accessories", () => {
   assert.ok(!matchesQuery("PlayStation Pulse headset 5.1 surround", ps5));
   assert.ok(!matchesQuery("LG 65 inch OLED", queryTokens("LG 5")));
   assert.ok(matchesQuery("Sony PS5 Slim Console Disc Edition", ps5));
+  for (const title of ["PlayStation 5\u2122 Console", "PS5\u2122 Slim", "PlayStation\u00ae5 Pro Console", "Sony PlayStation\u2122 5 Digital", "PS5\u00ae Console \u2013 1TB"]) {
+    assert.ok(matchesQuery(title, ps5), title);
+  }
   assert.ok(matchesQuery("PS 5 Pro console", ps5));
   assert.ok(!matchesQuery("Sony PS4 Slim 1TB", ps5));
   assert.ok(matchesQuery("Sony PlayStation 5 Console", queryTokens("ps5")));

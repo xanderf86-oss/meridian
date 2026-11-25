@@ -8,6 +8,9 @@ const STOPWORDS = new Set([
 
 export function normalizeText(value) {
   return String(value ?? "")
+    // Trademark signs would otherwise glue letters onto the model number
+    // ("PS5™" → "ps5tm") and break exact-number matching.
+    .replace(/[\u2122\u00ae\u00a9\u2120]/g, " ")
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
