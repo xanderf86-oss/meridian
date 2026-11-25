@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Deal Desk</title>
+  <meta name="description" content="Compare Black Friday prices across stores. No ads, no sponsored listings, no affiliate links.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12 12 3h8v8l-9 9z" /><circle cx="16" cy="8" r="1.6" /></svg>
+        <span>Deal Desk</span>
+      </div>
+      <p class="tag">Every store, lowest price first. No ads, no sponsored listings, no affiliate links.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <form id="search" class="search" role="search">
+      <label class="sr" for="q">Product</label>
+      <input id="q" name="q" type="search" placeholder="Search a product — e.g. AirPods Pro 2, LG C4 65, Dyson V15" autocomplete="off" required minlength="2" maxlength="100">
+      <button type="submit">Compare prices</button>
+    </form>
+    <div class="chips" id="suggestions" aria-label="Popular searches"></div>
+
+    <section id="status" class="status" hidden></section>
+
+    <section id="results" hidden>
+      <div class="summary" id="summary"></div>
+
+      <div class="filters" id="filters">
+        <label><input type="checkbox" id="f-new" checked> New only</label>
+        <label><input type="checkbox" id="f-acc" checked> Hide accessories</label>
+        <label><input type="checkbox" id="f-flag" checked> Hide suspicious lows</label>
+        <label>Store <select id="f-store"><option value="">All stores</option></select></label>
+        <label>Sort <select id="f-sort">
+          <option value="price">Lowest price</option>
+          <option value="off">Biggest % off</option>
+          <option value="rating">Best rated</option>
+        </select></label>
+      </div>
+
+      <div class="layout">
+        <section class="col-main" aria-labelledby="h-offers">
+          <h2 id="h-offers">Listings <span class="muted" id="offer-count"></span></h2>
+          <ol class="offers" id="offers"></ol>
+        </section>
+        <aside class="col-side">
+          <section class="panel" aria-labelledby="h-stores">
+            <h2 id="h-stores">Lowest new price by store</h2>
+            <table class="stores" id="stores"></table>
+          </section>
+          <section class="panel" aria-labelledby="h-reviews">
+            <h2 id="h-reviews">What owners and reviewers say</h2>
+            <ul class="reviews" id="reviews"></ul>
+          </section>
+          <section class="panel" aria-labelledby="h-community">
+            <h2 id="h-community">Community-found deals</h2>
+            <ul class="community" id="community"></ul>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <div id="sources" class="sources"></div>
+      <p class="muted">Prices come from official retailer APIs and public community feeds and can change at any moment — confirm at checkout.
+        Sponsored placements, ad redirects and affiliate tracking parameters are stripped from every link.</p>
+    </footer>
+  </main>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
