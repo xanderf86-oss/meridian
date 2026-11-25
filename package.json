@@ -6,6 +6,8 @@
     "node": "22.x"
   },
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node deals/server.mjs",
+    "start:meridian": "node server.mjs",
+    "test": "cd deals && node --test test/*.test.mjs"
   }
 }
