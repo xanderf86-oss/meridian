@@ -146,6 +146,41 @@ function render() {
   }).join("");
 }
 
+function offerCard(o, best = false) {
+  const badges = [
+    `<span class="badge${best ? " best" : ""}">${esc(o.retailer)}</span>`,
+    best ? `<span class="badge best">Lowest</span>` : "",
+    o.condition !== "new" ? `<span class="badge cond">${esc(o.condition)}</span>` : "",
+    o.accessory ? `<span class="badge warn">accessory?</span>` : "",
+    o.flags.includes("resale-site") ? `<span class="badge warn">resale site — individual seller</span>` : "",
+    o.flags.includes("far-below-typical") ? `<span class="badge warn">far below typical — check seller</span>` : "",
+  ].join("");
+  return `<li class="offer${best ? " best" : ""}">
+    ${o.image ? `<img class="thumb" src="${esc(safeUrl(o.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="thumb empty"></div>`}
+    <div>
+      ${link(o.url, esc(o.title), "title")}
+      <div class="meta">${badges}${o.rating ? `<span>${stars(o.rating, o.reviewCount)}</span>` : ""}${o.note ? `<span>${esc(o.note)}</span>` : ""}</div>
+    </div>
+    <div class="price">
+      <div class="now">${money.format(o.price)}</div>
+      ${o.originalPrice ? `<div class="was">${money.format(o.originalPrice)}</div><div class="off">${o.percentOff}% off</div>` : ""}
+      ${link(o.url, "View listing ↗", "btn")}
+    </div>
+  </li>`;
+}
+
+// Results the stores returned that did not exactly match the search words.
+// Shown openly when exact matches are scarce, tucked away otherwise.
+function renderRelated(exactShown) {
+  const related = (data.related || []).filter((o) => !o.accessory || !$("f-acc").checked).filter((o) => o.condition === "new" || !$("f-new").checked);
+  const box = $("related");
+  box.hidden = !related.length;
+  if (!related.length) return;
+  box.open = exactShown < 5;
+  $("related-summary").textContent = `${related.length} other result${related.length === 1 ? "" : "s"} the stores returned — not an exact match for “${data.query}”`;
+  $("related-list").innerHTML = related.slice(0, 60).map((o) => offerCard(o)).join("");
+}
+
 function renderOffers() {
   if (!data) return;
   const newOnly = $("f-new").checked;
@@ -166,31 +201,10 @@ function renderOffers() {
     [newOnly && scoped.filter((o) => o.condition !== "new").length, "used or refurbished"],
     [hideFlag && scoped.filter((o) => o.flags.length).length, "risky"],
   ].filter(([n]) => n).map(([n, label]) => `${n} ${label}`);
+  renderRelated(list.length);
   $("offer-count").innerHTML = `· ${list.length} shown${hidden > 0 ? ` · ${hidden} hidden by filters (${parts.join(", ")}) · <button type="button" class="linkish" id="show-all">show all</button>` : ""}`;
   $("offers").innerHTML = list.length
-    ? list.slice(0, 150).map((o) => {
-        const best = o.price === cheapest;
-        const badges = [
-          `<span class="badge${best ? " best" : ""}">${esc(o.retailer)}</span>`,
-          best ? `<span class="badge best">Lowest</span>` : "",
-          o.condition !== "new" ? `<span class="badge cond">${esc(o.condition)}</span>` : "",
-          o.accessory ? `<span class="badge warn">accessory?</span>` : "",
-          o.flags.includes("resale-site") ? `<span class="badge warn">resale site — individual seller</span>` : "",
-          o.flags.includes("far-below-typical") ? `<span class="badge warn">far below typical — check seller</span>` : "",
-        ].join("");
-        return `<li class="offer${best ? " best" : ""}">
-          ${o.image ? `<img class="thumb" src="${esc(safeUrl(o.image))}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<div class="thumb empty"></div>`}
-          <div>
-            ${link(o.url, esc(o.title), "title")}
-            <div class="meta">${badges}${o.rating ? `<span>${stars(o.rating, o.reviewCount)}</span>` : ""}${o.note ? `<span>${esc(o.note)}</span>` : ""}</div>
-          </div>
-          <div class="price">
-            <div class="now">${money.format(o.price)}</div>
-            ${o.originalPrice ? `<div class="was">${money.format(o.originalPrice)}</div><div class="off">${o.percentOff}% off</div>` : ""}
-            ${link(o.url, "View listing ↗", "btn")}
-          </div>
-        </li>`;
-      }).join("")
+    ? list.slice(0, 150).map((o) => offerCard(o, o.price === cheapest)).join("")
     : `<li class="empty-note">${data.offers.length ? "Nothing matches these filters — try including used/refurbished or accessories." : "No store listings. Connect more sources (see the list at the bottom)."}</li>`;
 }
 

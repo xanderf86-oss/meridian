@@ -47,6 +47,7 @@ test("search aggregates, strips ads and ranks by price", async () => {
     assert.ok(!titles.some((t) => /sponsored|AD$|inline/i.test(t)), titles.join("\n"));
     assert.ok(!body.offers.some((o) => o.retailer === "Target"), "sponsored-flagged result dropped");
     assert.ok(body.removed.sponsored >= 2);
+    assert.deepEqual(body.related, []);
     assert.ok(body.dropped.some((d) => d.reason === "sponsored" && d.retailer === "Target"));
     const google = body.sources.find((s) => s.id === "google_shopping");
     assert.deepEqual([google.count, google.kept], [4, 3]);

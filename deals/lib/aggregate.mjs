@@ -25,6 +25,7 @@ export function refineOffers(raw, query) {
   const offers = [];
   // A sample of what was dropped and why, so the filtering can be inspected.
   const dropped = [];
+  const related = [];
   const drop = (item, reason) => {
     removed[reason] += 1;
     if (dropped.length < 120) {
@@ -43,6 +44,15 @@ export function refineOffers(raw, query) {
     }
     if (!matchesQuery(item.title, tokens)) {
       drop(item, "offTopic");
+      // Kept aside as "not an exact match", so a strict filter never leaves an empty page.
+      if (related.length < 60 && !isResaleSite(item.retailer)) {
+        related.push({
+          source: item.source, retailer: item.retailer, title: item.title, price: item.price, url,
+          image: item.image || null, rating: item.rating || null, reviewCount: item.reviewCount || 0,
+          condition: item.condition || detectCondition(item.title), note: item.note || null,
+          originalPrice: null, percentOff: null, accessory: looksLikeAccessory(item.title, query), flags: [],
+        });
+      }
       continue;
     }
     const key = `${url}|${item.price}`;
@@ -74,7 +84,7 @@ export function refineOffers(raw, query) {
     }
   }
   offers.sort((a, b) => a.price - b.price);
-  return { offers, removed, dropped, typical };
+  return { offers, removed, dropped, related, typical };
 }
 
 export function summarize(offers) {
@@ -153,6 +163,7 @@ export async function runSearch(query, { sources, env, http }) {
     // by their sites and would swamp the numbers.
     removed: listings.removed,
     dropped: listings.dropped,
+    related: listings.related,
     sources: status,
   };
 }

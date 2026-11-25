@@ -216,3 +216,6 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .dropped summary { cursor: pointer; }
 .dropped ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow: auto; }
 .dropped li { overflow-wrap: anywhere; }
+.related { margin-top: 18px; }
+.related summary { cursor: pointer; font-weight: 600; margin-bottom: 6px; }
+.related .small { margin: 0 0 8px; }
